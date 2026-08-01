@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Lib\CurlRequest;
 use App\Lib\WhatsApp\WhatsAppLib;
 use App\Models\Contact;
-use App\Models\ContactNote;
 use App\Models\Conversation;
 use App\Models\CtaUrl;
 use App\Models\InteractiveList;
@@ -17,6 +16,8 @@ use App\Models\WhatsappAccount;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -60,12 +61,143 @@ class InboxController extends Controller
         $conversation = Conversation::where('user_id', $user->id)->where('id', $conversationId)->with('contact')->first();
         if (!$conversation) return apiResponse('not_found', 'error', ['Conversation not found']);
 
-        $messageQuery = Message::where('conversation_id', $conversationId);
+        $messageQuery = Message::where('conversation_id', $conversationId)->with('replyTo');
         $messages     = $messageQuery->orderBy('ordering', 'desc')->paginate(getPaginate());
 
         return apiResponse('chat_messages', 'success', ['Conversation messages fetched successfully.'], [
-            'messages' => $messages,
+            'messages'      => $messages,
+            'mediaBasePath' => s3_configured() ? 'external-api/inbox/media/by-path' : getFilePath('conversation'),
         ]);
+    }
+
+    public function downloadMedia($mediaId)
+    {
+        $user = getUserFromExternalAPIAccess();
+        if (!$user) return apiResponse('user_error', 'error', ['No user found for provided credentials']);
+
+        $message = Message::where('media_id', $mediaId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$message) {
+            return apiResponse("message_not_found", "error", ["Message not found"]);
+        }
+
+        try {
+            if ($message->message_type == Status::IMAGE_TYPE_MESSAGE) {
+                if ($message->media_path) {
+                    if (s3_configured()) {
+                        $fileContent = s3_disk()->get('conversation/' . $message->media_path);
+                        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                        $mimeType = $finfo->buffer($fileContent);
+                        $extension = pathinfo($message->media_path, PATHINFO_EXTENSION);
+                        $fileName = $message->media_id . '.' . $extension;
+                        return response($fileContent, 200)
+                            ->header('Content-Type', $mimeType)
+                            ->header('Content-Disposition', "attachment; filename={$fileName}");
+                    } else {
+                        $filePath = getFilePath('conversation') . "/" . $message->media_path;
+                        if (File::exists($filePath)) {
+                            return response()->download($filePath);
+                        }
+                    }
+                }
+                return responseManager('exception', "Failed to load the media");
+            }
+
+            $whatsapp = $user->currentWhatsapp();
+            if (!$whatsapp) {
+                return responseManager('exception', "WhatsApp account not found");
+            }
+            $accessToken = $whatsapp->access_token;
+
+            $mediaUrl = (new WhatsAppLib())->getMediaUrl($mediaId, $accessToken)['url'];
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$accessToken}",
+            ])->get($mediaUrl);
+
+            if ($response->failed()) {
+                return responseManager('exception', "Failed to load the media");
+            }
+
+            $fileContent = $response->body();
+            $mimeType = $response->header('Content-Type');
+            $extension = explode('/', $mimeType)[1];
+            $fileName = "{$mediaId}.{$extension}";
+
+            return response($fileContent, 200)
+                ->header('Content-Type', $mimeType)
+                ->header('Content-Disposition', "attachment; filename={$fileName}");
+        } catch (Exception $ex) {
+            return responseManager('exception', $ex->getMessage());
+        }
+    }
+
+    public function viewMedia($mediaId)
+    {
+        $user = getUserFromExternalAPIAccess();
+        if (!$user) return apiResponse('user_error', 'error', ['No user found for provided credentials']);
+
+        $message = Message::where('media_id', $mediaId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$message) {
+            return responseManager('exception', "Message not found");
+        }
+
+        try {
+            if ($message->message_type == Status::IMAGE_TYPE_MESSAGE && $message->media_path) {
+                if (s3_configured()) {
+                    $fileContent = s3_disk()->get('conversation/' . $message->media_path);
+                } else {
+                    $filePath = getFilePath('conversation') . "/" . $message->media_path;
+                    $fileContent = file_get_contents($filePath);
+                }
+
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo->buffer($fileContent);
+                $extension = pathinfo($message->media_path, PATHINFO_EXTENSION);
+                $fileName = $message->media_id . '.' . $extension;
+
+                return response($fileContent, 200)
+                    ->header('Content-Type', $mimeType)
+                    ->header('Content-Disposition', "inline; filename={$fileName}");
+            }
+
+            return $this->downloadMedia($mediaId);
+        } catch (Exception $ex) {
+            return responseManager('exception', $ex->getMessage());
+        }
+    }
+
+    public function serveMediaByPath($path)
+    {
+        $message = Message::where('media_path', $path)->first();
+
+        if (!$message || !$message->media_path) {
+            return apiResponse('media_not_found', 'error', ['Media not found']);
+        }
+
+        try {
+            if (s3_configured()) {
+                $fileContent = s3_disk()->get('conversation/' . $message->media_path);
+            } else {
+                $filePath = getFilePath('conversation') . "/" . $message->media_path;
+                if (!File::exists($filePath)) {
+                    return apiResponse('file_not_found', 'error', ['File not found']);
+                }
+                $fileContent = file_get_contents($filePath);
+            }
+
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            return response($fileContent, 200)
+                ->header('Content-Type', $finfo->buffer($fileContent))
+                ->header('Content-Disposition', "inline");
+        } catch (Exception $ex) {
+            return apiResponse('server_error', 'error', [$ex->getMessage()]);
+        }
     }
 
     public function updateMessageStatus($id)

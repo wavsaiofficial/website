@@ -11,8 +11,9 @@ class Contact extends Model
     use ApiQuery;
 
     protected $casts = [
-        'details' => 'array',
-        'address' => 'object'
+        'details'                 => 'array',
+        'address'                 => 'object',
+        'is_marketing_opted_out' => 'integer',
     ];
 
     protected $appends = [

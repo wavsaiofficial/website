@@ -1,3 +1,6 @@
+@php
+    $telegramIsInstalled = addonIsInstalled('tele-wpp');
+@endphp
 @extends('admin.layouts.app')
 @section('panel')
     <div class="row responsive-row">
@@ -580,7 +583,16 @@
                     <input class="form-control" type="number" name="floater_limit" min="-1"
                         value="{{ old('floater_limit') }}" required>
                 </div>
-                <div class="form-group col-12">
+
+                @if ($telegramIsInstalled)
+                    <div class="form-group col-lg-6">
+                        <label>@lang('Telegram Bot Limit')</label>
+                        <input class="form-control" type="number" name="telegram_bot_limit" min="-1"
+                            value="{{ old('telegram_bot_limit', $user->telegram_bot_limit) }}" required>
+                    </div>
+                @endif
+
+                <div class="form-group @if ($telegramIsInstalled) col-lg-6 @else col-12 @endif">
                     <label>@lang('Expiration Date')</label>
                     <input class="form-control date-picker" type="date" name="expiration_date"
                         value="{{ $user->plan_expired_at ?? '' }}" required>

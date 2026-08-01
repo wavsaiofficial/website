@@ -1,5 +1,5 @@
 @php
-    $isUnread = $message->status != Status::READ;
+    $isUnread = ($message->status != Status::READ && $message->type == Status::MESSAGE_RECEIVED);
     $boldClass = $isUnread ? ' text--bold' : '';
 @endphp
 
@@ -50,7 +50,7 @@
                 <i class="fa-solid fa-location-dot"></i> {{ __('Location') }}
             </p>
         @else
-            <p class="text{{ $boldClass }}">{{ e($shortMessage) }}</p>
+            <p class="text{{ $boldClass }}">{!! nl2br($shortMessage) !!}</p>
         @endif
     @endif
 </div>

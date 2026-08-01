@@ -6,9 +6,9 @@
  <ul class="dropdown-menu dropdown-menu-end chatbot-dropdown__menu">
      <li>
          <button type="button" class="dropdown-item d-flex justify-content-between flex-wrap align-items-center"
-             data-value="{{ Status::UNREAD_CONVERSATION }}">
-             <span>@lang('Unread')</span>
-             @if ($conversation->status == Status::UNREAD_CONVERSATION || $conversation->unseenMessages->count() > 0)
+             data-value="0">
+             <span>@lang('No Status') </span>
+             @if (!$conversation->status)
                  <i class="fa fa-check-double text--success"></i>
              @endif
          </button>
@@ -37,15 +37,6 @@
              data-value="{{ Status::DONE_CONVERSATION }}">
              <span>@lang('Done') </span>
              @if ($conversation->status == Status::DONE_CONVERSATION)
-                 <i class="fa fa-check-double text--success"></i>
-             @endif
-         </button>
-     </li>
-     <li>
-         <button type="button" class="dropdown-item d-flex justify-content-between flex-wrap align-items-center"
-             data-value="{{ Status::UNREAD_CONVERSATION }}">
-             <span>@lang('No Status') </span>
-             @if (!$conversation->status)
                  <i class="fa fa-check-double text--success"></i>
              @endif
          </button>

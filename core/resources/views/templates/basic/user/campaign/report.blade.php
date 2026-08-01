@@ -180,7 +180,7 @@
                             <tbody>
                                 @forelse ($messages as $message)
                                     <tr>
-                                        <td>{{ __(@$message->conversation->contact->mobileNumber) }}</td>
+                                        <td>{{ __(@$message->contact->mobileNumber) }}</td>
                                         <td>
                                             @if ($message->status == Status::SENT)
                                                 <span class="custom--badge badge badge--dark">@lang('Sent')</span>

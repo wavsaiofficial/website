@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\GeneralSetting;
 use Illuminate\Support\Str;
 
 return [
@@ -90,6 +91,10 @@ return [
             'driver' => 'octane',
         ],
 
+    ],
+
+    'serializable_classes' => [
+        GeneralSetting::class,
     ],
 
     /*

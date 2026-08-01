@@ -1,3 +1,7 @@
+@php 
+    $singleWhatsappAccount = count($whatsappAccounts) == 1;
+    $whatsappAccount = $singleWhatsappAccount ? $whatsappAccounts->first() : null;
+@endphp 
 @extends($activeTemplate . 'layouts.master')
 @section('content')
     <div class="dashboard-container">
@@ -144,22 +148,24 @@
                 <div class="modal-body">
                     <form action="{{ route('user.template.fetch') }}" method="POST">
                         @csrf
-                        <div class="form-group mb-3">
-                            <div class="alert alert--warning flex-column  border border-1 border--warning">
-                                <div class="alert__content">
-                                    <p class="mb-2">
-                                        <i class="las la-info-circle"></i>
-                                        <strong>@lang('You have multiple WhatsApp accounts. Please select the specific account from which you would like to fetch the templates from the meta.')</strong>
-                                    </p>
+                        @if (!$singleWhatsappAccount)
+                            <div class="form-group mb-3">
+                                <div class="alert alert--warning flex-column  border border-1 border--warning">
+                                    <div class="alert__content">
+                                        <p class="mb-2">
+                                            <i class="las la-info-circle"></i>
+                                            <strong>@lang('You have multiple WhatsApp accounts. Please select the specific account from which you would like to fetch the templates from the meta.')</strong>
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        @endif
                         <div class="form-group mb-3">
                             <label for="whatsappAccount">@lang('WhatsApp Account')</label>
                             <select class="form--control select2" id="whatsappAccount" required name="whatsapp_account">
                                 <option value="">@lang('Select an account')</option>
                                 @foreach ($whatsappAccounts as $account)
-                                    <option value="{{ $account->id }}">
+                                    <option value="{{ $account->id }}" @selected($account->id == $whatsappAccount->id)>
                                         {{ __(@$account->business_name) }} - {{ __(@$account->phone_number) }}
                                     </option>
                                 @endforeach

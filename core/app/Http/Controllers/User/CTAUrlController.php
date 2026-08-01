@@ -94,15 +94,15 @@ class CTAUrlController extends Controller
             ];
         }
 
-        $ctaUrl                 = new CtaUrl();
-        $ctaUrl->user_id        = $user->id;
-        $ctaUrl->name           = $request->cta_url_name;
-        $ctaUrl->cta_url        = $request->cta_url;
-        $ctaUrl->header_format  = $request->header_format;
-        $ctaUrl->header         = $header;
-        $ctaUrl->body           = $body;
-        $ctaUrl->action         = $action;
-        $ctaUrl->footer         = $footer;
+        $ctaUrl                = new CtaUrl();
+        $ctaUrl->user_id       = $user->id;
+        $ctaUrl->name          = $request->cta_url_name;
+        $ctaUrl->cta_url       = $request->cta_url;
+        $ctaUrl->header_format = $request->header_format;
+        $ctaUrl->header        = $header;
+        $ctaUrl->body          = $body;
+        $ctaUrl->action        = $action;
+        $ctaUrl->footer        = $footer;
         $ctaUrl->save();
 
         $notify[] = ['success', 'CTA URL created successfully'];
@@ -111,7 +111,7 @@ class CTAUrlController extends Controller
 
     public function delete($id)
     {
-        $user   = getParentUser();
+        $user = getParentUser();
 
         $ctaUrl = CtaUrl::where('user_id', $user->id)->find($id);
 
@@ -126,11 +126,16 @@ class CTAUrlController extends Controller
         }
 
         if ($ctaUrl->header_format == 'IMAGE') {
-            $imageUrl  = $ctaUrl->header['image']['link'];
-            $relativePath  = ltrim(str_replace(url('/'), '', $imageUrl), '/');
+            $imageData = $ctaUrl->header['image'];
 
-            if (file_exists($relativePath)) {
-                unlink($relativePath);
+            if (s3_configured() && !empty($imageData['_s3_key'])) {
+                s3_disk()->delete($imageData['_s3_key']);
+            } else {
+                $imageUrl  = $imageData['link'];
+                $relativePath  = ltrim(str_replace(url('/'), '', $imageUrl), '/');
+                if (file_exists($relativePath)) {
+                    unlink($relativePath);
+                }
             }
         }
 

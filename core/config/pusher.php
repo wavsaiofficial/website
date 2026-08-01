@@ -1,6 +1,6 @@
 <?php
-$pusherAppId       = "2157261";
-$pusherAppKey      ="4cae3b627e1b94dfc605";
-$pusherAppSecret   ="f3837c94a2e1b20a9f93";
+$pusherAppId       = "2041848";
+$pusherAppKey      ="f935facb3082f3f6151b";
+$pusherAppSecret   ="a2bb86d87d3019928db4";
 $pusherAppCluster  ="ap2";
 ?>

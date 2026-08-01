@@ -15,11 +15,28 @@
          },
          $escapedText,
      );
+     $replyToMessageTitle = mediaTypeMessageText($message->replyTo);
+     if($message->replyTo) {
+        $replyToAuthorName = $message->replyTo->type == Status::MESSAGE_SENT ? "You" : $message->contact->fullname;
+     }
  @endphp
 
  <div class="single-message {{ @$message->type == Status::MESSAGE_SENT ? 'message--right' : 'message--left' }}"
      data-message-id="{{ $message->id }}">
      <div class="message-content">
+
+         @if ($message->replyTo)
+             <div class="parent-message-wrapper" data-message-id="{{ $message->replyTo->id }}" role="button" tabindex="0"
+                 title="@lang('Go to replied message')">
+                 <div class="parent-message-text">
+                     <span
+                         class="parent-message-title text--base">{{ $replyToAuthorName ?? 'Unknown' }}</span>
+                     <span class="parent-message-content">
+                         @php echo $replyToMessageTitle @endphp
+                     </span>
+                 </div>
+             </div>
+         @endif
          @if ($message->template_id)
              <p class="message-text"><i class="las la-envelope-square"></i> @lang('Template Message')</p>
          @elseif ($message->cta_url_id)
@@ -55,15 +72,17 @@
          @elseif($message->product_data)
              <div class="card custom--card border-0 rounded-0 p-0">
                  @php
-                    $headerImage = null;
-                    if(isset($message->product_data['header']['image']) && $message->product_data['header']['image']['link']) {
-                        $headerImage = $message->product_data['header']['image']['link'];
-                    }
+                     $headerImage = null;
+                     if (
+                         isset($message->product_data['header']['image']) &&
+                         $message->product_data['header']['image']['link']
+                     ) {
+                         $headerImage = $message->product_data['header']['image']['link'];
+                     }
                  @endphp
                  <div class="card-header pb-0 rounded-0">
-                     @if ($headerImage) 
-                         <img src="{{ $headerImage }}"
-                             class="card-img-top cta-header-img m-0" alt="header_image">
+                     @if ($headerImage)
+                         <img src="{{ $headerImage }}" class="card-img-top cta-header-img m-0" alt="header_image">
                      @else
                          <h5 class="card-title text-black">{{ @$message->product_data['header']['text'] }}</h5>
                      @endif
@@ -128,7 +147,11 @@
 
                  </div>
              @else
-                 <p class="message-text">@lang('Reply Button Message')</p>
+                 @if ($message->message != null)
+                     <p class="message-text">{{ $message->message }}</p>
+                 @else
+                     <p class="message-text">@lang('Reply Button Message')</p>
+                 @endif
              @endif
          @elseif ($message->list_reply && !empty($message->list_reply))
              <p class="message-text">{{ $message->list_reply['title'] }}</p>
@@ -167,11 +190,14 @@
              @endif
              @if (@$message->media_id)
                  @if (@$message->message_type == Status::IMAGE_TYPE_MESSAGE)
-                     <a href="{{ route('user.inbox.media.download', $message->media_id) }}">
+                     <div class="message-image-wrapper">
                          <img class="message-image"
-                             src="{{ getImage(getFilePath('conversation') . '/' . @$message->media_path) }}"
-                             alt="image">
-                     </a>
+                             src="{{ s3_configured() ? s3_disk()->temporaryUrl('conversation/' . $message->media_path, now()->addHours(2)) : route('user.inbox.media.view', $message->media_id) }}"
+                             alt="image"
+                             onerror="this.onerror=null; this.src='{{ asset('assets/images/default.png') }}'"
+                             data-view-url="{{ route('user.inbox.media.view', $message->media_id) }}"
+                             data-download-url="{{ route('user.inbox.media.download', $message->media_id) }}">
+                     </div>
                  @endif
                  @if (@$message->message_type == Status::VIDEO_TYPE_MESSAGE)
                      <div class="text-dark d-flex align-items-center justify-content-between">
@@ -224,6 +250,12 @@
                  </div>
              @endif
          @endauth
+         @if ($message->type == Status::MESSAGE_RECEIVED)
+             <div class="message-reply-button" data-message-text="{{ mediaTypeMessageText($message) }}"
+                 data-message-id="{{ $message->id }}">
+                 <span><i class="las la-reply-all"></i></span>
+             </div>
+         @endif
      </div>
      <div class="d-flex align-items-center justify-content-between">
          <span class="message-time">{{ showDateTime(@$message->created_at, 'h:i A') }}

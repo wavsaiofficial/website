@@ -82,6 +82,14 @@
 
 <x-confirmation-modal isFrontend="true" />
 
+<div class="image-preview-modal">
+    <a class="image-preview-modal__download" href="" download>
+        <i class="las la-download"></i>
+    </a>
+    <span class="image-preview-modal__close">&times;</span>
+    <img src="" alt="">
+</div>
+
 @push('script')
     <script>
         "use strict";
@@ -90,6 +98,7 @@
             const $conversationListWrapper = $('#chat-list');
             const $messageBody = $('.msg-body');
             const $contactDetails = $('.contact__details');
+            const defaultImageUrl = "{{ asset('assets/images/default.png') }}";
 
             let moreConversationList = true;
             let isFetchConversation = true;
@@ -451,6 +460,31 @@
                     tooltipTriggerEl))
             }
 
+            $(document).on('click', '.message-image', function() {
+                const src = $(this).attr('src');
+                if (!src || src === defaultImageUrl) {
+                    return;
+                }
+                const downloadUrl = $(this).data('download-url');
+
+                $('.image-preview-modal').addClass('show');
+                $('.image-preview-modal img')
+                    .attr('src', src)
+                    .off('error')
+                    .on('error', function() {
+                        $(this).off('error').attr('src', defaultImageUrl);
+                    });
+                $('.image-preview-modal__download').attr('href', downloadUrl);
+            });
+
+            $(document).on('click', '.image-preview-modal__close, .image-preview-modal', function(e) {
+                if (e.target === this || $(e.target).hasClass('image-preview-modal__close')) {
+                    $('.image-preview-modal').removeClass('show');
+                    $('.image-preview-modal img').attr('src', '');
+                    $('.image-preview-modal__download').attr('href', '');
+                }
+            });
+
         })(jQuery);
     </script>
 @endpush
@@ -491,6 +525,75 @@
             z-index: 9999;
             pointer-events: none;
             /* Remove d-none display:none when visible */
+        }
+
+        .message-image-wrapper {
+            display: inline-block;
+            max-width: 100%;
+        }
+
+        .message-image-wrapper .message-image {
+            max-width: 200px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .image-preview-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 99999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .image-preview-modal.show {
+            display: flex;
+        }
+
+        .image-preview-modal img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .image-preview-modal__close {
+            position: absolute;
+            top: 15px;
+            right: 25px;
+            color: #fff!important;
+            font-size: 2.5rem;
+            cursor: pointer;
+            line-height: 1;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            z-index: 1;
+        }
+
+        .image-preview-modal__close:hover {
+            opacity: 1;
+        }
+
+        .image-preview-modal__download {
+            position: absolute;
+            top: 20px;
+            right: 60px;
+            color: #fff;
+            font-size: 1.6rem;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            z-index: 1;
+            text-decoration: none;
+        }
+
+        .image-preview-modal__download:hover {
+            opacity: 1;
+            color: #fff;
         }
     </style>
 @endpush

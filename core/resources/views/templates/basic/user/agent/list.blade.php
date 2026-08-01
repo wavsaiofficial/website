@@ -72,7 +72,7 @@
                                 </td>
                                 <td>
                                     <div>
-                                        <span class="fw-bold" title="{{ @$agent->country_name }}">
+                                        <span class="fw-bold" title="{{ @$agent->country_name ?? 'N/A' }}">
                                             {{ $agent->country_code }}
                                         </span>
                                     </div>

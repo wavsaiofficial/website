@@ -95,7 +95,7 @@ class CampaignController extends Controller
         }
         $template = Template::where('user_id', $user->id)
             ->approved()
-            ->with('language')
+            ->with('language', 'category')
             ->where('id', $request->template_id)
             ->first();
 
@@ -168,6 +168,15 @@ class CampaignController extends Controller
 
         $campaign->contacts()->sync($contactIds);
         CampaignContact::where('campaign_id', $campaign->id)->update(['send_at' => $sendAt]);
+
+        if (strtoupper($template->category?->name ?? '') === 'MARKETING') {
+            CampaignContact::where('campaign_id', $campaign->id)
+                ->whereHas('contact', fn($query) => $query->where('is_marketing_opted_out', Status::YES))
+                ->update([
+                    'is_trigger'    => Status::YES,
+                    'error_message' => json_encode('Promotional message not sent because the contact opted out of marketing messages.'),
+                ]);
+        }
 
         decrementFeature($user, 'campaign_limit');
 

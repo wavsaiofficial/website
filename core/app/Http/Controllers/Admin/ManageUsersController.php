@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Rules\FileTypeValidate;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class ManageUsersController extends Controller
@@ -250,7 +251,7 @@ class ManageUsersController extends Controller
 
     public function extendLimit(Request $request, $id)
     {
-        $request->validate([
+        $rules = [
             'account_limit'    => 'required|integer|gte:-1',
             'agent_limit'      => 'required|integer|gte:-1',
             'contact_limit'    => 'required|integer|gte:-1',
@@ -260,7 +261,13 @@ class ManageUsersController extends Controller
             'short_link_limit' => 'required|integer|gte:-1',
             'floater_limit'    => 'required|integer|gte:-1',
             'expiration_date'  => 'required|date',
-        ]);
+        ];
+
+        if (addonIsInstalled('tele-wpp')) {
+            $rules['telegram_bot_limit'] = 'required|integer|gte:-1';
+        }
+
+        $request->validate($rules);
 
         $user = User::where('is_agent', Status::NO)->findOrFail($id);
 
@@ -297,7 +304,11 @@ class ManageUsersController extends Controller
         $user->interactive_message = $request->interactive_message ? Status::YES : Status::NO;
         $user->ecommerce_available = $request->ecommerce_available ? Status::YES : Status::NO;
         $user->api_available       = $request->api_available ? Status::YES : Status::NO;
-        $user->plan_expired_at     = $expirationDate;
+        $user->telegram_bot_limit  = $request->telegram_bot_limit;
+
+        if (addonIsInstalled('tele-wpp') && Schema::hasColumn('users', 'telegram_bot_limit')) {
+            $user->plan_expired_at    = $expirationDate;
+        }
         $user->save();
 
         notify($user, 'SUBSCRIPTION_EXTENDED', [

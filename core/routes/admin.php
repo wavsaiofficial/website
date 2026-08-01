@@ -300,6 +300,11 @@ Route::middleware('admin')->group(function () {
         Route::get('pusher-configuration', 'pusherConfiguration')->name('setting.pusher.configuration')->middleware('permission:pusher configuration,admin');
         Route::post('pusher-configuration', 'pusherConfigurationUpdate')->name('setting.pusher.configuration')->middleware('permission:pusher configuration,admin');
 
+        // S3 Cloud Storage
+        Route::get('s3-storage', 's3Storage')->name('setting.s3.storage')->middleware('permission:update general settings,admin');
+        Route::post('s3-storage', 's3StorageUpdate')->name('setting.s3.storage')->middleware('permission:update general settings,admin');
+        Route::post('s3-storage/test', 's3TestConnection')->name('setting.s3.test');
+
 
         Route::get('setting/social/credentials', 'socialiteCredentials')->name('setting.socialite.credentials')->middleware('permission:social login settings,admin');
         Route::post('setting/social/credentials/update/{key}', 'updateSocialiteCredential')->name('setting.socialite.credentials.update')->middleware('permission:social login settings,admin');
@@ -411,6 +416,7 @@ Route::middleware('admin')->group(function () {
     Route::prefix('addons')->controller("AddonController")->name('addons.')->middleware("permission:manage addons,admin")->group(function () {
         Route::get('/', 'index')->name('index');
         Route::post('/upload', 'upload')->name('upload');
+        Route::post('/version-upload', 'versionUpload')->name('version.upload');
         Route::post('/toggle/{id}', 'toggle')->name('toggle');
     });
 });

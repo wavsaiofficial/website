@@ -29,9 +29,21 @@ class Message extends Model
         return $this->belongsTo(Conversation::class);
     }
 
+    public function contact():Attribute
+    {
+        return new Attribute(function () {
+            return $this->conversation?->contact;
+        });
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function replyTo()
+    {
+        return $this->belongsTo(self::class,'reply_to_id');
     }
 
     public function agent()

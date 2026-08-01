@@ -8,7 +8,7 @@
          <span class="name"><span>@lang('Assign Agent')</span> </span>
      </button>
      <ul class="dropdown-menu dropdown-menu-end chatbot-dropdown__menu">
-         @foreach ($agents as $agent)
+         @forelse ($agents as $agent)
              <li>
                  <a href="{{ route('user.inbox.conversation.assign', ['conversationId' => $conversation->id, 'agentId' => $agent->id, 'channel' => ($channel ?? request('channel'))]) }}"
                      class="dropdown-item d-flex justify-content-between flex-wrap align-items-center">
@@ -21,6 +21,10 @@
                      @endif
                  </a>
              </li>
-         @endforeach
+             @empty
+             <li class="dropdown-item d-flex justify-content-between flex-wrap align-items-center">
+                 <span>@lang('No Agent Found')</span>
+             </li>
+         @endforelse
      </ul>
  @endif

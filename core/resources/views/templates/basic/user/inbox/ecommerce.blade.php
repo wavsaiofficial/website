@@ -87,7 +87,7 @@
                 if (!window.customerCountry) return notify('error', ['To create a WooCommerce order via the API, the customer address is required.','Please complete the customer address from the Contact Edit section.']);
 
                 if (!ecommercePlan) return notify('error',
-                    'Currently you have not plan for e-commerce configured action. Please upgrade your plan'
+                    'The e-commerce feature is not available on your current plan. Please upgrade to continue.'
                 );
 
                 $orderBtn.text('Order processing...').prop('disabled', true);
@@ -147,7 +147,7 @@
             $eCommerceModal.on('click', '.woo-info-btn', function() {
 
                 if (!ecommercePlan) {
-                    return notify('error','Currently you have not plan for e-commerce configured action. Please upgrade your plan');
+                    return notify('error','The e-commerce feature is not available on your current plan. Please upgrade to continue.');
                 }
 
                 let product = $(this).data('product');
@@ -192,7 +192,7 @@
 
             $('.ecommerceBtn').on('click', () => {
                 if (!ecommercePlan) {
-                    return notify('error','Currently you have not plan for e-commerce configured action. Please upgrade your plan');
+                    return notify('error','The e-commerce feature is not available on your current plan. Please upgrade to continue.');
                 }
                 $eCommerceModal.modal('show');
                 

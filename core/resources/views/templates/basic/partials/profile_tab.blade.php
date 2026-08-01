@@ -21,32 +21,26 @@
                 </a>
             </li>
         @endif
-        
         <li>
             <a href="{{ route('user.profile.setting') }}"
                 class="profile-list__link {{ menuActive('user.profile.setting') }}">
                 <span class="profile-list__icon"> <i class="fas fa-user"></i> </span> @lang('My Profile')
             </a>
         </li>
-
         @if (isParentUser())
-            {{-- API PLAN FEATURE CHECK ADDED HERE --}}
-            @if (auth()->user()->plan && auth()->user()->plan->api_available == 1)
-                <li>
-                    <a href="{{ route('user.development.credential') }}"
-                        class="profile-list__link {{ menuActive('user.development.credential') }}">
-                        <span class="profile-list__icon"> <i class="fab fa-codepen"></i> </span> @lang('Developer Tool')
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ route('user.ip.white.list.index') }}"
-                        class="profile-list__link {{ menuActive('user.ip.white.list.index') }}">
-                        <span class="profile-list__icon"> <i class="fas fa-mobile"></i> </span> @lang('IP White List')
-                    </a>
-                </li>
-            @endif
+            <li>
+                <a href="{{ route('user.development.credential') }}"
+                    class="profile-list__link {{ menuActive('user.development.credential') }}">
+                    <span class="profile-list__icon"> <i class="fab fa-codepen"></i> </span> @lang('Developer Tool')
+                </a>
+            </li>
+            <li>
+                <a href="{{ route('user.ip.white.list.index') }}"
+                    class="profile-list__link {{ menuActive('user.ip.white.list.index') }}">
+                    <span class="profile-list__icon"> <i class="fas fa-mobile"></i> </span> @lang('IP White List')
+                </a>
+            </li>
         @endif
-
         <li>
             <a href="{{ route('user.twofactor') }}" class="profile-list__link {{ menuActive('user.twofactor') }}">
                 <span class="profile-list__icon"> <i class="fa-solid fa-shield-halved"></i> </span> @lang('2FA Setting')

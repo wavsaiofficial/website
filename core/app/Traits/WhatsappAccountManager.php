@@ -37,6 +37,7 @@ trait WhatsappAccountManager
 
     public function storeWhatsappAccount(Request $request)
     {
+
         $request->validate([
             'whatsapp_number' => 'required',
             'whatsapp_business_account_id' => 'required',
@@ -96,7 +97,8 @@ trait WhatsappAccountManager
             ]);
         }
 
-        // Connect WhatsApp phone number 
+        //connect whatsapp phone number 
+
         try {
             $token = $whatsappAccount->access_token;
             $phoneNumberId = $whatsappAccount->phone_number_id;
@@ -132,19 +134,9 @@ trait WhatsappAccountManager
         try {
             $whatsappData = $this->verifyWhatsappCredentials($whatsappAccount->whatsapp_business_account_id, $whatsappAccount->access_token);
 
-            if (isset($whatsappData['data'])) {
-                if (isset($whatsappData['data']['verified_name'])) {
-                    $whatsappAccount->business_name = $whatsappData['data']['verified_name'];
-                }
-                if (isset($whatsappData['data']['display_phone_number'])) {
-                    $whatsappAccount->phone_number = $whatsappData['data']['display_phone_number'];
-                }
-                
-                // FIXED: Now saves the verification status from the Meta API response
-                if (isset($whatsappData['data']['code_verification_status'])) {
-                    $whatsappAccount->code_verification_status = $whatsappData['data']['code_verification_status'];
-                }
-                
+            if ($whatsappData['data']['verified_name'] && $whatsappData['data']['display_phone_number']) {
+                $whatsappAccount->business_name = $whatsappData['data']['verified_name'];
+                $whatsappAccount->phone_number = $whatsappData['data']['display_phone_number'];
                 $whatsappAccount->save();
             }
         } catch (Exception $ex) {
@@ -154,7 +146,6 @@ trait WhatsappAccountManager
         $message = "WhatsApp account verification status updated successfully";
         return responseManager("verification_status", $message, "success");
     }
-    
     public function whatsappPhoneNumberVerificationCheck($accountId)
     {
         $user = getParentUser();
@@ -183,14 +174,14 @@ trait WhatsappAccountManager
             return responseManager("whatsapp_error", $ex->getMessage());
         }
 
-        $message = "WhatsApp Phone number status checked successfully";
+        $message = "WhatsApp Phone number  status check successfully";
         return responseManager("verification_status", $message, "success");
     }
 
     public function whatsappAccountConnect($id)
     {
-        $user = getParentUser();
-        $whatsappAccount = WhatsappAccount::where('user_id', $user->id)->findOrFailWithApi("whatsapp account", $id);
+        $user                        = getParentUser();
+        $whatsappAccount             = WhatsappAccount::where('user_id', $user->id)->findOrFailWithApi("whatsapp account", $id);
         $whatsappAccount->is_default = Status::YES;
         $whatsappAccount->save();
 
@@ -202,6 +193,7 @@ trait WhatsappAccountManager
 
     public function whatsappAccountSettingConfirm(Request $request, $accountId)
     {
+
         $request->validate([
             'meta_access_token' => 'required',
         ]);
@@ -219,6 +211,7 @@ trait WhatsappAccountManager
         $whatsappAccount->code_verification_status = $whatsappData['data']['code_verification_status'];
         $whatsappAccount->save();
 
+
         $token = $whatsappAccount->access_token;
         $phoneNumberId = $whatsappAccount->phone_number_id;
 
@@ -232,13 +225,13 @@ trait WhatsappAccountManager
 
             if ($response->successful()) {
                 $data = $response->json();
+
                 if (isset($data['status'])) {
                     $whatsappAccount->phone_number_status = $data['status'];
                     $whatsappAccount->save();
                 }
             }
         } catch (Exception $ex) {
-            // Silently handle exception based on original code logic
         }
 
         $message = "WhatsApp account credentials updated successfully";
@@ -275,13 +268,19 @@ trait WhatsappAccountManager
         }
 
         $userAccounts = WhatsappAccount::where('user_id', $user->id)->get();
-        $isDefaultAccount = $userAccounts->count() < 1 ? Status::YES : Status::NO;
+
+        $isDefaultAccount = Status::NO;
+
+        if ($userAccounts->count() < 1) {
+            $isDefaultAccount = Status::YES;
+        }
 
         $whatsappAccount = new WhatsappAccount();
         $whatsappAccount->user_id = $user->id;
         $whatsappAccount->whatsapp_business_account_id = $request->waba_id;
         $whatsappAccount->phone_number_id = $request->phone_number_id;
         $whatsappAccount->is_default = $isDefaultAccount;
+
         $whatsappAccount->save();
 
         decrementFeature($user, 'account_limit');
@@ -310,7 +309,7 @@ trait WhatsappAccountManager
 
         $permanentToken = $this->longLivedToken($data['access_token']);
 
-        if (isset($permanentToken['access_token'])) {
+        if ($permanentToken['access_token']) {
             $data['access_token'] = $permanentToken['access_token'];
         }
 
@@ -375,23 +374,11 @@ trait WhatsappAccountManager
 
         $url = "https://graph.facebook.com/v24.0/{$whatsappAccount->phone_number_id}/register";
 
-        // FIXED: Using Bearer token in headers instead of request body
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . $request->access_token,
-        ])->post($url, [
+        $response = Http::post($url, [
+            'access_token' => $request->access_token,
             'pin' => $request->pin,
             "messaging_product" => "whatsapp"
         ]);
-
-        // FIXED: Parsing the response properly to save the CONNECTED status
-        if ($response->successful()) {
-            $data = $response->json();
-            if (isset($data['success']) && $data['success'] == true) {
-                $whatsappAccount->phone_number_status = "CONNECTED";
-                $whatsappAccount->save();
-            }
-        }
 
         return to_route('user.whatsapp.account.verification.check', $whatsappAccount->id);
     }

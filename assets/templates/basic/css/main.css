@@ -9049,6 +9049,12 @@ body:has(.select2-dark) .select2+.select2-container .select2-selection__arrow::a
 .dashboard-body .filter-icon {
   color: hsl(var(--mute-color));
   display: none;
+  margin-bottom: 8px;
+  margin-top: -12px;
+}
+
+.dashboard-body .filter-icon i{
+  font-size: 24px !important;
 }
 
 @media screen and (max-width: 767px) {
@@ -9163,6 +9169,7 @@ body:has(.select2-dark) .select2+.select2-container .select2-selection__arrow::a
   font-weight: 700;
   font-family: var(--body-font);
   font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 .chatbox-area__body .chat-box__content .text {
@@ -9251,7 +9258,7 @@ body:has(.select2-dark) .select2+.select2-container .select2-selection__arrow::a
 }
 
 .single-message:last-child {
-  margin-bottom: 50px;
+  margin-bottom: 90px;
 }
 
 @media screen and (max-width: 767px) {
@@ -11074,96 +11081,17 @@ body:has(.select2-dark) .select2+.select2-container .select2-selection__arrow::a
   padding: 0 10px;
 }
 
-@media screen and (max-width: 1399px) {
-  .profile-page-wrapper .profile-list__link {
-    padding: 0 5px;
-    font-size: 15px;
-  }
-}
-
-@media screen and (max-width: 1199px) {
-  .profile-page-wrapper .profile-list__link {
-    padding: 0;
-  }
-
-  .profile-page-wrapper .profile-list__link.active::after {
-    bottom: -5px !important;
-  }
-}
-
 @media screen and (max-width: 767px) {
-  .profile-page-wrapper {
-    height: 100vh;
-    overflow-y: auto;
-    z-index: 999;
-    -webkit-transition: 0.25s linear;
-    transition: 0.25s linear;
-    width: 320px;
-    background: #000301;
-    border-radius: 0;
-    position: fixed;
-    right: 0;
-    top: 0;
-    -webkit-box-align: start;
-    -ms-flex-align: start;
-    transform: translateX(100%);
-    align-items: start;
-    -webkit-box-orient: horizontal;
-    -webkit-box-direction: normal;
-    -ms-flex-direction: row;
-    flex-direction: row;
-    padding: 50px 24px;
-  }
-
   .profile-page-wrapper .profile-list {
-    gap: 2px;
-  }
-
-  .profile-page-wrapper.show-sidebar {
-    transform: translateX(0);
-  }
-
-  .profile-page-wrapper .profile-list {
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: flex-start;
-    text-align: left;
+      width: 100%;
+      justify-content: space-around;
   }
 
   .profile-page-wrapper .profile-list li {
-    width: 100%;
-  }
-
-  .profile-page-wrapper .profile-list__link {
-    color: hsl(var(--body-color));
-    padding: 10px 15px;
-    border-radius: 5px;
-    width: 100%;
-    font-size: 16px;
-  }
-
-  .profile-list__icon {
-    color: hsl(var(--body-color)) !important;
-  }
-
-  .profile-page-wrapper .profile-list__link.active,
-  .profile-page-wrapper .profile-list__link:hover {
-    background-color: hsl(var(--body-color));
-    color: hsl(var(--title-color));
-    text-decoration: none;
-  }
-
-  .profile-bar-icon {
-    padding: 20px;
-    font-size: 24px;
-    padding-bottom: 0;
-    cursor: pointer;
-  }
-
-  .profile-page-wrapper .profile-list__link.active::after {
-    display: none;
+      
   }
 }
+
 
 .profile-page-wrapper .profile-list__link.active {
   position: relative;
@@ -11178,13 +11106,6 @@ body:has(.select2-dark) .select2+.select2-container .select2-selection__arrow::a
   width: 100%;
   height: 3px;
   background-color: hsl(var(--title-color) / 0.7);
-}
-
-@media screen and (max-width: 1199px) {
-  .profile-page-wrapper .profile-list__link.active::after {
-    bottom: -5px;
-    height: 2px;
-  }
 }
 
 .profile-page-wrapper .profile-list__link.active .profile-list__icon,
@@ -12860,10 +12781,16 @@ div#flow-builder {
 
 .product-card-buttons {
   position: absolute;
-  right: 0px;
+  right: 5px;
   top: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 3px;
+  box-shadow:
+    rgba(60, 64, 67, 0.3) 0px 1px 2px 0px,
+    rgba(60, 64, 67, 0.15) 0px 1px 3px 1px;
 }
-
 
 .offcanvas.product-details-offcanvas {
   max-width: 100% !important;
@@ -13407,6 +13334,7 @@ div#flow-builder {
   height: 6px;
   border-radius: 50%;
   animation: pulse 2s ease-in-out infinite;
+  background-color: hsl(var(--base));
 }
 
 .badge.badge--success::before {

@@ -236,9 +236,15 @@ class FlowBuilderController extends Controller
         foreach ($flow->nodes as $node) {
             $media  = $node->media;
             if ($media) {
-                $filePath = getFilePath('flowBuilderMedia') . '/' . $media->media_path;
-                if ($media->media_path && file_exists($filePath)) {
-                    unlink($filePath);
+                if ($media->media_path) {
+                    if (s3_configured()) {
+                        s3_disk()->delete('flowBuilderMedia/' . $media->media_path);
+                    } else {
+                        $filePath = getFilePath('flowBuilderMedia') . '/' . $media->media_path;
+                        if (file_exists($filePath)) {
+                            unlink($filePath);
+                        }
+                    }
                 }
                 $media->delete();
             }
@@ -283,7 +289,16 @@ class FlowBuilderController extends Controller
             try {
                 $old = $oldNodeMedia->media_path ?? null;
                 $fileName = $request->node_id . '.' . $request->file->getClientOriginalExtension();
-                $nodeMedia->media_path = fileUploader($request->file, getFilePath('flowBuilderMedia'), getFileSize('flowBuilderMedia'), $old, filename: $fileName);
+                if (s3_configured()) {
+                    if ($old) {
+                        s3_disk()->delete('flowBuilderMedia/' . $old);
+                    }
+                    $fileContent = file_get_contents($request->file->getRealPath());
+                    s3_disk()->put('flowBuilderMedia/' . $fileName, $fileContent, 'public');
+                    $nodeMedia->media_path = $fileName;
+                } else {
+                    $nodeMedia->media_path = fileUploader($request->file, getFilePath('flowBuilderMedia'), getFileSize('flowBuilderMedia'), $old, filename: $fileName);
+                }
             } catch (\Exception $e) {
                 return apiResponse("media_upload", "error", [$e->getMessage()]);
             }
@@ -295,8 +310,12 @@ class FlowBuilderController extends Controller
 
         $nodeMedia->save();
 
+        $mediaUrl = s3_configured()
+            ? s3_disk()->url('flowBuilderMedia/' . $nodeMedia->media_path)
+            : route('home') . '/' . getFilePath('flowBuilderMedia') . '/' . $nodeMedia->media_path;
+
         return apiResponse("media_upload", "success", ["Media uploaded successfully"], [
-            'mediaPath' => route('home') . '/' . getFilePath('flowBuilderMedia') . '/' . $nodeMedia->media_path
+            'mediaPath' => $mediaUrl
         ]);
     }
 

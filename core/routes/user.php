@@ -28,8 +28,8 @@ Route::namespace('User\Auth')->name('user.')->middleware('guest')->group(functio
     });
 
     Route::controller('SocialiteController')->group(function () {
-        Route::get('social-login/{provider}', 'socialLogin')->name('social.login');
-        Route::get('social-login/callback/{provider}', 'callback')->name('social.login.callback');
+        Route::get('social-login/{provider?}', 'socialLogin')->name('social.login');
+        Route::get('social-login/callback/{provider?}', 'callback')->name('social.login.callback');
     });
 });
 
@@ -149,6 +149,7 @@ Route::middleware('auth')->name('user.')->group(function () {
                         Route::post('translate', 'translateAiMessage')->name('translate')->middleware('agent.permission:send message');
                     });
                     Route::get('media/download/{mediaId}', 'downloadMedia')->name('media.download');
+                    Route::get('media/view/{mediaId}', 'viewMedia')->name('media.view');
                 });
             });
 

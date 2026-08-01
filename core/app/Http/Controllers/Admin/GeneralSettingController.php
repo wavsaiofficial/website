@@ -8,6 +8,7 @@ use App\Models\Frontend;
 use App\Rules\FileTypeValidate;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class GeneralSettingController extends Controller
@@ -421,5 +422,97 @@ class GeneralSettingController extends Controller
         }
         $notify[] = ['success', 'PWA images updated successfully'];
         return back()->withNotify($notify);
+    }
+
+    public function s3Storage()
+    {
+        $pageTitle = 'S3 Cloud Storage';
+        return view('admin.setting.s3_storage', compact('pageTitle'));
+    }
+
+    public function s3StorageUpdate(Request $request)
+    {
+        $request->validate([
+            'key'                     => 'required|string',
+            'secret'                  => 'required|string',
+            'region'                  => 'required|string',
+            'bucket'                  => 'required|string',
+            'url'                     => 'nullable|string',
+            'endpoint'                => 'nullable|string',
+            'status'                  => 'nullable|in:0,1',
+        ]);
+
+        $general = gs();
+        $general->s3_config = [
+            'status'                  => $request->boolean('status'),
+            'key'                     => $request->key,
+            'secret'                  => $request->secret,
+            'region'                  => $request->region,
+            'bucket'                  => $request->bucket,
+            'url'                     => $request->url,
+            'endpoint'                => $request->endpoint,
+            'use_path_style_endpoint' => $request->boolean('use_path_style_endpoint'),
+        ];
+        $general->save();
+
+        $notify[] = ['success', 'S3 storage configuration updated successfully'];
+        return back()->withNotify($notify);
+    }
+
+    public function s3TestConnection(Request $request)
+    {
+        $config = [
+            'status'                  => $request->boolean('status'),
+            'key'                     => $request->key,
+            'secret'                  => $request->secret,
+            'region'                  => $request->region,
+            'bucket'                  => $request->bucket,
+            'url'                     => $request->url,
+            'endpoint'                => $request->endpoint,
+            'use_path_style_endpoint' => $request->boolean('use_path_style_endpoint'),
+        ];
+
+        if (empty($config['key']) || empty($config['secret']) || empty($config['region']) || empty($config['bucket'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Missing required fields: Access Key ID, Secret Access Key, Region, Bucket.'
+            ]);
+        }
+
+        try {
+            config(['filesystems.disks.s3' => [
+                'driver'                  => 's3',
+                'key'                     => $config['key'],
+                'secret'                  => $config['secret'],
+                'region'                  => $config['region'],
+                'bucket'                  => $config['bucket'],
+                'url'                     => $config['url'] ?? null,
+                'endpoint'                => $config['endpoint'] ?? null,
+                'use_path_style_endpoint' => (bool) ($config['use_path_style_endpoint'] ?? false),
+                'throw'                   => false,
+            ]]);
+
+            $testFile = '_ovowpp_test_' . time() . '.txt';
+            Storage::disk('s3')->put($testFile, 'ok', ['visibility' => 'public']);
+            $exists = Storage::disk('s3')->exists($testFile);
+            Storage::disk('s3')->delete($testFile);
+
+            if ($exists) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'S3 connection successful!'
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Upload succeeded but file not found. Check bucket write permissions.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Connection failed: ' . $e->getMessage()
+            ]);
+        }
     }
 }

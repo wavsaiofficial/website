@@ -25,7 +25,6 @@ class TemplateController extends Controller
 
     public function index()
     {
-
         $pageTitle          = "Manage Template";
         $user               = getParentUser();
         $templateCategories = TemplateCategory::get();
@@ -37,7 +36,7 @@ class TemplateController extends Controller
             ->paginate(getPaginate());
 
         $whatsappAccounts = WhatsappAccount::where('user_id', $user->id)->get();
-        return view('Template::user.template.index', compact('pageTitle', 'templates', 'templateCategories', 'whatsappAccounts'));
+        return view('Template::user.template.index', compact('pageTitle','user','templates', 'templateCategories', 'whatsappAccounts'));
     }
 
     public function createTemplate()
@@ -656,7 +655,6 @@ class TemplateController extends Controller
             return responseManager('limit', $notify);
         }
 
-
         $businessAccountId = $whatsappAccount->whatsapp_business_account_id;
         $accessToken       = $whatsappAccount->access_token;
 
@@ -678,16 +676,22 @@ class TemplateController extends Controller
                 return responseManager('error', 'No templates found for the selected whatsapp account');
             }
 
+            $templates = $data['data'];
 
-            $templates     = $data['data'];
-            $totalImported = 0;
+            $totalImported   = 0;
+            $whatsappManager = new WhatsAppLib();
+            $mediaLink       = $whatsappManager->getWhatsAppBaseUrl() . "{$whatsappAccount->phone_number_id}/media";
 
             foreach ($templates as $template) {
-                $templateExists = Template::where('user_id', $user->id)
+                $existingTemplate = Template::where('user_id', $user->id)
                     ->where('whatsapp_template_id', $template['id'])
-                    ->exists();
+                    ->first();
 
-                if ($templateExists) continue;
+                $isCarousel = collect($template['components'] ?? [])->contains(function ($component) {
+                    return strtoupper($component['type'] ?? '') == 'CAROUSEL';
+                });
+
+                if ($existingTemplate && (!$isCarousel || $existingTemplate->cards()->exists())) continue;
 
                 if (!isset($template['components']) || !is_array($template['components']) || count($template['components']) === 0) {
                     continue;
@@ -709,15 +713,15 @@ class TemplateController extends Controller
                     $language->save();
                 }
 
-                //work with template header
                 $components = $template['components'];
 
-                $headerMedia  = null;
-                $headerFormat = null;
-                $footer       = null;
-                $header       = [];
-                $buttons      = [];
-                $body         = null;
+                $headerMedia   = null;
+                $headerFormat  = null;
+                $footer        = null;
+                $header        = [];
+                $buttons       = [];
+                $body          = null;
+                $carouselCards = [];
 
                 foreach ($components as $component) {
                     $type = strtoupper($component['type']);
@@ -727,7 +731,7 @@ class TemplateController extends Controller
                         $headerFormat = strtoupper($component['format']);
 
                         if ($headerFormat == "IMAGE") {
-                            $headerMedia  = $component['example']['header_handle'][0];
+                            $headerMedia  = $component['example']['header_handle'][0] ?? null;
                             $header['handle'] = $headerMedia;
 
 
@@ -769,26 +773,100 @@ class TemplateController extends Controller
                         $buttons    = $component['buttons'] ?? [];
                         continue;
                     }
+
+                    //carousel cards
+                    if ($type == 'CAROUSEL') {
+                        foreach (($component['cards'] ?? []) as $card) {
+                            $cardHeader  = null;
+                            $cardBody    = null;
+                            $cardButtons = null;
+
+                            foreach (($card['components'] ?? []) as $cardComponent) {
+                                $cardComponentType = strtoupper($cardComponent['type'] ?? '');
+
+                                if ($cardComponentType == 'HEADER') {
+                                    $cardHeader = $cardComponent;
+                                } elseif ($cardComponentType == 'BODY') {
+                                    $cardBody = $cardComponent['text'] ?? null;
+                                } elseif ($cardComponentType == 'BUTTONS') {
+                                    $cardButtons = $cardComponent;
+                                }
+                            }
+
+                            if (!$cardHeader) {
+                                continue;
+                            }
+
+                            $cardMediaId   = null;
+                            $cardMediaPath = null;
+                            $headerHandle  = $cardHeader['example']['header_handle'][0] ?? null;
+
+                            if ($headerHandle) {
+                                $mediaResponse = Http::get($headerHandle);
+
+                                if (!$mediaResponse->successful()) {
+                                    throw new Exception('Could not download carousel header media');
+                                }
+
+                                $sourceName    = basename(parse_url($headerHandle, PHP_URL_PATH));
+                                $cardMediaPath = uniqid('carousel_') . '_' . $sourceName;
+                                $filePath      = getFilePath('templateCardHeader') . '/' . $cardMediaPath;
+
+                                File::ensureDirectoryExists(dirname($filePath));
+                                File::put($filePath, $mediaResponse->body());
+
+                                $uploadedMedia = $whatsappManager->uploadMedia($mediaLink, $filePath, $accessToken);
+                                $cardMediaId    = $uploadedMedia['id'];
+                            }
+
+                            $carouselCards[] = [
+                                'header'        => $cardHeader,
+                                'body'          => $cardBody,
+                                'buttons'       => $cardButtons,
+                                'media_id'      => $cardMediaId,
+                                'media_path'    => $cardMediaPath,
+                                'header_format' => strtoupper($cardHeader['format'] ?? 'IMAGE'),
+                            ];
+                        }
+
+                        continue;
+                    }
                 }
 
 
-                $newTemplate                              = new Template();
-                $newTemplate->user_id                     = $user->id;
-                $newTemplate->whatsapp_account_id         = $whatsappAccount->id;
-                $newTemplate->whatsapp_template_id        = $template['id'];
-                $newTemplate->name                        = $template['name'];
-                $newTemplate->category_id                 = $category->id;
-                $newTemplate->language_id                 = $language->id;
-                $newTemplate->body                        = $body;
-                $newTemplate->header                      = $header;
-                $newTemplate->header_format               = $headerFormat;
-                $newTemplate->header_media                = $headerMedia;
-                $newTemplate->footer                      = $footer;
-                $newTemplate->status                      = metaTemplateStatus($template['status']);
-                $newTemplate->buttons                     = $buttons;
-                $newTemplate->code_expiration_minutes     = null;
-                $newTemplate->add_security_recommendation = $request->add_security_recommendation ? Status::YES : Status::NO;
-                $newTemplate->save();
+                $newTemplate = $existingTemplate ?? new Template();
+
+                if (!$existingTemplate) {
+                    $newTemplate->user_id                     = $user->id;
+                    $newTemplate->whatsapp_account_id         = $whatsappAccount->id;
+                    $newTemplate->whatsapp_template_id        = $template['id'];
+                    $newTemplate->name                        = $template['name'];
+                    $newTemplate->category_id                 = $category->id;
+                    $newTemplate->language_id                 = $language->id;
+                    $newTemplate->body                        = $body;
+                    $newTemplate->header                      = $header;
+                    $newTemplate->header_format               = $headerFormat;
+                    $newTemplate->header_media                = $headerMedia;
+                    $newTemplate->footer                      = $footer;
+                    $newTemplate->status                      = metaTemplateStatus($template['status']);
+                    $newTemplate->buttons                     = $buttons;
+                    $newTemplate->code_expiration_minutes     = null;
+                    $newTemplate->add_security_recommendation = $request->add_security_recommendation ? Status::YES : Status::NO;
+                    $newTemplate->save();
+                }
+
+                foreach ($carouselCards as $card) {
+                    $templateCard                = new TemplateCard();
+                    $templateCard->template_id   = $newTemplate->id;
+                    $templateCard->user_id       = $user->id;
+                    $templateCard->media_id      = $card['media_id'];
+                    $templateCard->header_format = $card['header_format'];
+                    $templateCard->media_path    = $card['media_path'];
+                    $templateCard->header        = $card['header'];
+                    $templateCard->body          = $card['body'];
+                    $templateCard->buttons       = $card['buttons'];
+                    $templateCard->save();
+                }
 
                 $totalImported++;
             }

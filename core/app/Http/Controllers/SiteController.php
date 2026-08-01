@@ -154,7 +154,7 @@ class SiteController extends Controller
 
     public function blogs()
     {
-        $pageTitle   = gs('site_name') . ' Blogs';
+        $pageTitle   = 'Blogs';
         $blogs       = Frontend::where('data_keys', 'blog.element')->paginate(getPaginate(21));
         $sections    = Page::where('tempname', activeTemplate())->where('slug', 'blog')->first();
         $seoContents = $sections->seo_content;
@@ -175,14 +175,14 @@ class SiteController extends Controller
 
     public function features()
     {
-        $pageTitle = gs('site_name') . ' Features';
+        $pageTitle = 'Features';
         $sections  = Page::where('tempname', activeTemplate())->where('slug', 'feature')->first();
         return view('Template::features', compact('pageTitle', 'sections'));
     }
 
     public function pricing()
     {
-        $pageTitle = gs('site_name') . ' Pricing';
+        $pageTitle = 'Pricing';
         $sections  = Page::where('tempname', activeTemplate())->where('slug', 'pricing')->first();
         return view('Template::pricing', compact('pageTitle', 'sections'));
     }

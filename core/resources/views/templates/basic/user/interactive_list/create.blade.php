@@ -505,6 +505,27 @@
                     sectionIndex + '"]').remove();
             });
 
+            $(document).on('click', '.remove-attribute', function(e) {
+                e.preventDefault();
+
+                let $row = $(this).closest('.custom-row-wrapper');
+                let $section = $row.closest('.list--section');
+                let sectionIndex = $section.data('section-index');
+                let $rowsInSection = $section.find('.rows-wrapper .custom-row-wrapper');
+
+                if ($rowsInSection.length <= 1) {
+                    notify('error', "@lang('At least one row is required per section')");
+                    return;
+                }
+
+                let rowIndex = $row.index() - 1;
+
+                $row.remove();
+
+                $(`.message-preview-list__section[data-section-index="${sectionIndex}"]`)
+                    .find('.row_wrapper .message-preview-list__row').eq(rowIndex).remove();
+            });
+
             $(".button-text-preview").on("click", function() {
                 $(".message-preview-list").addClass("active");
             });

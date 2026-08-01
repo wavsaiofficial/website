@@ -1,6 +1,6 @@
-<div class="chat-box">
-    <div class="chat-box__shape">
-        <img src="{{ getImage($activeTemplateTrue . 'images/chat-bg.png') }}" alt="">
+<div class = "chat-box">
+    <div class = "chat-box__shape">
+        <img src   = "{{ getImage($activeTemplateTrue . 'images/chat-bg.png') }}" alt = "">
     </div>
     <div class="chat-box__header position-relative">
         <span class="message-inbox-btn">
@@ -18,7 +18,7 @@
                 </div>
             </div>
         </div>
-        <div class="d-flex align-items-center justify-content-center gap-2 conversation-left-side-actions">
+        <div class="d-flex align-items-center justify-content-end flex-wrap gap-2 conversation-left-side-actions">
             @if (isParentUser())
                 <div class="dropdown chatbot-dropdown conversation-agent-assign-dropdown"></div>
             @endif
@@ -27,7 +27,6 @@
             <div class="dropdown chatbot-dropdown ai-status-dropdown"></div>
 
             <div class="text-end d-flex justify-content-end gap-3 align-items-center">
-                <span class="filter-icon"> <i class="fas fa-stream"></i> </span>
                 <span class="user-icon"><i class="fa-regular fa-user"></i></span>
             </div>
             <div class="dropdown chatbot-dropdown conversation-options">
@@ -190,6 +189,16 @@
                 </div>
             </div>
 
+            <div class="reply-to-message d-none" aria-live="polite">
+                <div class="reply-to-message__content">
+                    <span class="reply-to-message__title">@lang('Replying to')</span>
+                    <span class="reply-to-message__text"></span>
+                </div>
+                <button type="button" class="reply-to-message__cancel" aria-label="@lang('Cancel reply')">
+                    <i class="las la-times"></i>
+                </button>
+            </div>
+
             <div class="input-area d-flex align-center gap-2">
                 <span id="togglePickerBtn" class="emoji-icon cursor-pointer"><i class="far fa-smile"></i></span>
                 <div class="input-group">
@@ -212,6 +221,77 @@
 
 @push('style-lib')
     <link rel="stylesheet" href="{{ asset($activeTemplateTrue . 'css/esg-studio.css') }}">
+@endpush
+
+@push('style')
+    <style>
+        .chat-send-area {
+            position: relative;
+        }
+
+        .reply-to-message {
+            position: absolute;
+            right: 40px;
+            bottom: calc(100% + 8px);
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            width: calc(100% - 245px);
+            min-width: 0;
+            padding: 9px 42px 9px 12px;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #fafbfb;
+            color: #667781;
+        }
+
+        .reply-to-message::before {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 4px;
+            background: hsl(var(--base));
+            content: '';
+        }
+
+        .reply-to-message__content {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+        }
+
+        .reply-to-message__title {
+            color: hsl(var(--base)) !important;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .reply-to-message__text {
+            overflow: hidden;
+            font-size: 12px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .reply-to-message__cancel {
+            position: absolute;
+            top: 6px;
+            right: 8px;
+            padding: 4px;
+            border: 0;
+            background: transparent;
+            color: #54656f;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        @media screen and (max-width: 1199px) {
+            .reply-to-message {
+                width: 100%;
+            }
+        }
+    </style>
 @endpush
 
 @push('script-lib')

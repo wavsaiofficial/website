@@ -865,6 +865,7 @@
             "menu_active": [
                 "admin.setting.general*",
                 "admin.setting.pusher.configuration",
+                "admin.setting.s3.storage",
                 "admin.setting.system.*",
                 "admin.kyc.*",
                 "admin.setting.socialite.*",
@@ -945,6 +946,33 @@
                     ],
                     "permission": [
                         "pusher configuration"
+                    ]
+                },
+                {
+                    "title": "S3 Storage",
+                    "icon": "las la-cloud",
+                    "route_name": "admin.setting.s3.storage",
+                    "menu_active": "admin.setting.s3.storage",
+                    "keyword": [
+                        "s3",
+                        "aws s3",
+                        "s3 storage",
+                        "cloud storage",
+                        "amazon s3",
+                        "s3 bucket",
+                        "cloud file storage",
+                        "s3 configuration",
+                        "s3 settings",
+                        "s3 setup",
+                        "s3 integration",
+                        "s3 credentials",
+                        "s3 key",
+                        "s3 secret",
+                        "s3 region",
+                        "s3 bucket"
+                    ],
+                    "permission": [
+                        "update general settings"
                     ]
                 },
                 {

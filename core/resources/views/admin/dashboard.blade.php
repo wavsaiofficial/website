@@ -31,7 +31,8 @@
         </div>
 
     </div>
-    <x-admin.other.cron_modal />
+    {{-- TODO:: Need this --}}
+    {{-- <x-admin.other.cron_modal /> --}}
 @endsection
 
 @push('script-lib')

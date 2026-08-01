@@ -136,7 +136,7 @@
                 if (ctaUrl.header_format == 'IMAGE') {
                     $modal.find('.header_text').addClass('d-none');
                     $modal.find('.header_media').removeClass('d-none');
-                    $modal.find('.header_media').find('img').attr('src', ctaUrl.header.image.link ?? '');
+                    $modal.find('.header_media').find('img').attr('src', ctaUrl.header_image ?? '');
                 } else {
                     $modal.find('.header_media').addClass('d-none');
                     $modal.find('.header_text').removeClass('d-none');

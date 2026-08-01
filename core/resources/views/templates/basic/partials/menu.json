@@ -132,7 +132,7 @@
                 {
                     "title": "Flow Builder",
                     "route_name": "user.flow.builder.index",
-                    "menu_active": "user.flow.builder.index",
+                    "menu_active": "user.flow.builder.*",
                     "permission": [
                         "view flow builder"
                     ]

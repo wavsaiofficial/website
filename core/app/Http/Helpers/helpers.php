@@ -25,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 function systemDetails()
 {
@@ -1149,4 +1150,68 @@ function addonIsInstalled(string $slug): bool
 function addonAsset(string $addonName, string $path)
 {
     return url('/') . "/core/addons/$addonName/Source/$path";
+}
+
+function s3_configured(): bool
+{
+    $config = gs('s3_config');
+    return $config && !empty($config->status) && !empty($config->key)
+           && !empty($config->secret) && !empty($config->region) && !empty($config->bucket);
+}
+
+function s3_disk(): ?\Illuminate\Contracts\Filesystem\Cloud
+{
+    static $disk = null;
+    if ($disk !== null) {
+        return $disk;
+    }
+
+    if (!s3_configured()) return null;
+
+    $config = gs('s3_config');
+    config(['filesystems.disks.s3' => [
+        'driver'                  => 's3',
+        'key'                     => $config->key,
+        'secret'                  => $config->secret,
+        'region'                  => $config->region,
+        'bucket'                  => $config->bucket,
+        'url'                     => $config->url ?? null,
+        'endpoint'                => $config->endpoint ?? null,
+        'use_path_style_endpoint' => (bool) ($config->use_path_style_endpoint ?? false),
+        'throw'                   => false,
+    ]]);
+
+    $disk = Storage::disk('s3');
+    return $disk;
+}
+
+function s3_url($path): string
+{
+    if (s3_configured()) {
+        $url = s3_disk()->url(ltrim($path, '/'));
+        return str_replace('\\', '/', $url);
+    }
+    return '';
+}
+
+function mediaTypeMessageText($message)
+{
+    if (!$message) return '';
+    $type = (int) $message->message_type;
+    if($message->template) {
+        $type = 'template';
+    }
+    $match = match ($type) {
+        Status::IMAGE_TYPE_MESSAGE    => '<i class="las la-image"></i> ' . __('Image'),
+        Status::VIDEO_TYPE_MESSAGE    => '<i class="las la-video"></i> ' . __('Video'),
+        Status::DOCUMENT_TYPE_MESSAGE => '<i class="las la-file"></i> ' . __('Document'),
+        Status::AUDIO_TYPE_MESSAGE    => '<i class="las la-microphone"></i> ' . __('Audio'),
+        Status::URL_TYPE_MESSAGE      => '<i class="fa-solid fa-paperclip"></i> ' . __('Cta URL'),
+        Status::BUTTON_TYPE_MESSAGE   => '<i class="las la-undo"></i> ' . __('Button Reply'),
+        Status::LOCATION_TYPE_MESSAGE => '<i class="fa-solid fa-location-dot"></i> ' . __('Location'),
+        Status::LIST_TYPE_MESSAGE     => '<i class="fa-solid fa-list"></i> ' . __('Interactive List'),
+        'template'                    => '<i class="las la-file"></i> ' . __('Replied to Template'),
+        default => $message->message
+    };
+    return $match;
 }

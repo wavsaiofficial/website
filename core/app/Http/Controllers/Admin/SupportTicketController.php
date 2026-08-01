@@ -87,7 +87,11 @@ class SupportTicketController extends Controller
         $path    = getFilePath('ticket');
         if ($message->attachments()->count() > 0) {
             foreach ($message->attachments as $attachment) {
-                fileManager()->removeFile($path . '/' . $attachment->attachment);
+                if (s3_configured()) {
+                    s3_disk()->delete('ticket/' . $attachment->attachment);
+                } else {
+                    fileManager()->removeFile($path . '/' . $attachment->attachment);
+                }
                 $attachment->delete();
             }
         }

@@ -58,6 +58,7 @@ class WebhookController extends Controller
         $messageCaption = null;
         $profileName = null;
         $errorMessage = null;
+        $replyToWhatsappMessageId = null;
 
         $whatsappAccount = WhatsappAccount::where('whatsapp_business_account_id', $entry[0]['id'])->first();
 
@@ -104,6 +105,10 @@ class WebhookController extends Controller
 
                 if (isset($metaMessage[0]['id'])) {
                     $senderId = $metaMessage[0]['id'];
+                }
+
+                if (isset($metaMessage[0]['context']['id'])) {
+                    $replyToWhatsappMessageId = $metaMessage[0]['context']['id'];
                 }
 
                 if (isset($change['value']['statuses'][0]['id'])) {
@@ -189,7 +194,7 @@ class WebhookController extends Controller
                     'message' => $message,
                     'statusHtml' => $message->statusBadge,
                     'newMessage' => $isNewMessage,
-                    'mediaPath' => getFilePath('conversation'),
+                    'mediaPath' => s3_configured() ? url('api/inbox/media/by-path/') : getFilePath('conversation') . '/',
                     'conversationId' => $wMessage->conversation_id,
                     'unseenMessage' => $wMessage->conversation->unseenMessages()->count() < 10 ? $wMessage->conversation->unseenMessages()->count() : '9+',
                 ]));
@@ -223,6 +228,14 @@ class WebhookController extends Controller
                 $contact->save();
             }
 
+            if (trim($messageText ?? '') === 'STOP') {
+                $contact->is_marketing_opted_out = Status::YES;
+                $contact->save();
+            }elseif(trim($messageText ?? '') === 'START') {
+                $contact->is_marketing_opted_out = Status::NO;
+                $contact->save();
+            }
+
             $conversation = Conversation::where('contact_id', $contact->id)->where('user_id', $user->id)->where('whatsapp_account_id', $whatsappAccount->id)->first();
 
             if (!$conversation) {
@@ -236,21 +249,32 @@ class WebhookController extends Controller
             $automationLib = new AutomationLib();
 
             if (!$messageExists) {
+                $replyToMessage = null;
+
+                if ($replyToWhatsappMessageId) {
+                    $replyToMessage = Message::where('whatsapp_message_id', $replyToWhatsappMessageId)
+                        ->where('whatsapp_account_id', $whatsappAccount->id)
+                        ->where('conversation_id', $conversation->id)
+                        ->first();
+                }
+
                 // Save the incoming message
-                $message = new Message();
+                $message                      = new Message();
                 $message->whatsapp_account_id = $whatsappAccount->id;
                 $message->whatsapp_message_id = $senderId;
-                $message->user_id = $user->id ?? 0;
-                $message->conversation_id = $conversation->id;
-                $message->message = $messageText ?? $buttonReply ?? '';
-                $message->list_reply = $listReply;
-                $message->type = Status::MESSAGE_RECEIVED;
-                $message->message_type = getIntMessageType($messageType);
-                $message->media_id = $mediaId;
-                $message->media_type = $mediaType;
-                $message->media_caption = $messageCaption;
-                $message->mime_type = $mediaMimeType;
-                $message->ordering = Carbon::now();
+                $message->user_id             = $user->id ?? 0;
+                $message->conversation_id     = $conversation->id;
+                $message->message             = $messageText ?? $buttonReply ?? '';
+                $message->list_reply          = $listReply;
+                $message->type                = Status::MESSAGE_RECEIVED;
+                $message->message_type        = getIntMessageType($messageType);
+                $message->media_id            = $mediaId;
+                $message->media_type          = $mediaType;
+                $message->media_caption       = $messageCaption;
+                $message->mime_type           = $mediaMimeType;
+                $message->reply_to_id         = $replyToMessage?->id ?? 0;
+                $message->ordering            = Carbon::now();
+                
                 $message->save();
 
                 $conversation->last_message_at = Carbon::now();
@@ -285,7 +309,7 @@ class WebhookController extends Controller
                     'unseenMessage' => $conversation->unseenMessages()->count() < 10 ? $conversation->unseenMessages()->count() : '9+',
                     'lastMessageAt' => showDateTime(Carbon::now()),
                     'conversationId' => $conversation->id,
-                    'mediaPath' => getFilePath('conversation')
+                    'mediaPath' => s3_configured() ? url(getFilePath('conversation')) . '/' : getFilePath('conversation') . '/'
                 ]));
 
                 notify($user, 'MESSAGE_RECEIVED', [

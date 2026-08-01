@@ -8,6 +8,7 @@ use App\Lib\AiAssistantLib\Gemini;
 use App\Lib\AiAssistantLib\OpenAi;
 use App\Lib\CurlRequest;
 use App\Models\AiAssistant;
+use App\Models\Contact;
 use App\Models\Message;
 use Carbon\Carbon;
 use Exception;
@@ -19,6 +20,8 @@ class WhatsAppLib
 {
     public function sendInteractiveListMessage($toNumber, $whatsappAccount, $interactiveList)
     {
+        $this->ensureMarketingMessageAllowed($toNumber, $whatsappAccount);
+
         $phoneNumberId    = $whatsappAccount->phone_number_id;
         $accessToken      = $whatsappAccount->access_token;
 
@@ -91,10 +94,12 @@ class WhatsAppLib
 
     public function sendCtaUrlMessage($toNumber, $whatsappAccount, $ctaUrl = null, $productData = null)
     {
-        $phoneNumberId    = $whatsappAccount->phone_number_id;
-        $accessToken      = $whatsappAccount->access_token;
+        $this->ensureMarketingMessageAllowed($toNumber, $whatsappAccount);
 
-        $url       = $this->getWhatsAppBaseUrl() . "{$phoneNumberId}/messages";
+        $phoneNumberId = $whatsappAccount->phone_number_id;
+        $accessToken   = $whatsappAccount->access_token;
+
+        $url = $this->getWhatsAppBaseUrl() . "{$phoneNumberId}/messages";
 
         $data = [
             'messaging_product' => 'whatsapp',
@@ -105,9 +110,9 @@ class WhatsAppLib
 
         if ($ctaUrl) {
             $interactive = [
-                'type'  => 'cta_url',
+                'type'   => 'cta_url',
                 'header' => $ctaUrl->header,
-                'body'  => $ctaUrl->body,
+                'body'   => $ctaUrl->body,
                 'action' => $ctaUrl->action
             ];
 
@@ -121,14 +126,14 @@ class WhatsAppLib
         } else {
             $data['interactive'] = $interactive;
         }
-
+       
         try {
 
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$accessToken}"
             ])->post($url, $data);
             $responseData = $response->json();
-
+            
             if (!is_array($responseData) || !count($responseData)) {
                 throw new Exception("Something went wrong");
             }
@@ -158,9 +163,16 @@ class WhatsAppLib
             throw new Exception($ex->getMessage());
         }
     }
-
+    
     public function sendTemplateMessage($request, $whatsappAccount, $template, $contact)
     {
+        if (
+            strtoupper($template->category?->name ?? '') === 'MARKETING'
+            && $contact->is_marketing_opted_out == Status::YES
+        ) {
+            throw new Exception('Promotional message not sent because the contact opted out of marketing messages.');
+        }
+
         $phoneNumberId = $whatsappAccount->phone_number_id;
         $accessToken   = $whatsappAccount->access_token;
 
@@ -299,7 +311,21 @@ class WhatsAppLib
         }
     }
 
-    public function messageSend($request, $toNumber, $whatsappAccount)
+    private function ensureMarketingMessageAllowed($toNumber, $whatsappAccount): void
+    {
+        $normalizedNumber = preg_replace('/\D/', '', $toNumber);
+
+        $isOptedOut = Contact::where('user_id', $whatsappAccount->user_id)
+            ->whereRaw('CONCAT(mobile_code, mobile) = ?', [$normalizedNumber])
+            ->where('is_marketing_opted_out', Status::YES)
+            ->exists();
+
+        if ($isOptedOut) {
+            throw new Exception('Promotional message not sent because the contact opted out of marketing messages.');
+        }
+    }
+
+    public function messageSend($request, $toNumber, $whatsappAccount,$replyToMessage = null)
     {
 
         $phoneNumberId    = $whatsappAccount->phone_number_id;
@@ -330,6 +356,9 @@ class WhatsAppLib
             $mediaId       = $mediaUpload['id'];
             $mediaCaption  = $request->message;
             $data['type']  = 'image';
+            if ($replyToMessage !== null && $replyToMessage->whatsapp_message_id) {
+                $data['context'] = ['message_id' => $replyToMessage->whatsapp_message_id];
+            }
             $data['image'] = [
                 'id'      => $mediaId,
                 'caption' => $mediaCaption
@@ -343,6 +372,9 @@ class WhatsAppLib
             $mediaCaption     = $request->message;
             $mediaFileName    = $request->file('document') ? $request->file('document')->getClientOriginalName() : basename($request->get('document'));
             $data['type']     = 'document';
+            if ($replyToMessage !== null && $replyToMessage->whatsapp_message_id) {
+                $data['context'] = ['message_id' => $replyToMessage->whatsapp_message_id];
+            }
             $data['document'] = [
                 'id'       => $mediaId,
                 'caption'  => $mediaCaption,
@@ -356,6 +388,9 @@ class WhatsAppLib
             $mediaId       = $mediaUpload['id'];
             $mediaCaption  = $request->message;
             $data['type']  = 'video';
+            if ($replyToMessage !== null && $replyToMessage->whatsapp_message_id) {
+                $data['context'] = ['message_id' => $replyToMessage->whatsapp_message_id];
+            }
             $data['video'] = [
                 'id'      => $mediaId,
                 'caption' => $mediaCaption
@@ -368,6 +403,9 @@ class WhatsAppLib
             $mediaId       = $mediaUpload['id'];
             $mediaCaption  = $request->message;
             $data['type']  = 'audio';
+            if ($replyToMessage !== null && $replyToMessage->whatsapp_message_id) {
+                $data['context'] = ['message_id' => $replyToMessage->whatsapp_message_id];
+            }
             $data['audio'] = [
                 'id'      => $mediaId
             ];
@@ -375,6 +413,9 @@ class WhatsAppLib
             $mimeType      = mime_content_type($file->getPathname());
         } else if ($request->latitude && $request->longitude) {
             $data['type'] = 'location';
+            if ($replyToMessage !== null && $replyToMessage->whatsapp_message_id) {
+                $data['context'] = ['message_id' => $replyToMessage->whatsapp_message_id];
+            }
             $location = [
                 'latitude' => $request->latitude,
                 'longitude' => $request->longitude,
@@ -387,6 +428,9 @@ class WhatsAppLib
             $data['location'] = $location;
         } else {
             $data['type'] = 'text';
+            if ($replyToMessage !== null && $replyToMessage->whatsapp_message_id) {
+                $data['context'] = ['message_id' => $replyToMessage->whatsapp_message_id];
+            }
             $data['text'] = [
                 'body' => $request->message
             ];
@@ -429,7 +473,8 @@ class WhatsAppLib
                 'messageType'     => $data['type'],
                 'mimeType'        => $mimeType ?? null,
                 'mediaType'       => $mediaType ?? null,
-                'location'        => $data['location'] ?? null
+                'location'        => $data['location'] ?? null,
+                'replyToMessage'  => $replyToMessage ?? null,
             ];
         } catch (Exception $ex) {
             throw new Exception($ex->getMessage());
@@ -628,16 +673,20 @@ class WhatsAppLib
             $fileExtension = explode('/', $mimeType)[1];
             $fileName      = "{$mediaId}.{$fileExtension}";
 
-            $parentFolder = getFilePath('conversation');
+            $parentFolder = 'conversation';
             $subFolder    = "{$userId}/" . date('Y/m/d');
             $folderPath   = $parentFolder . "/" . $subFolder;
             $filePath     = $folderPath . "/" . $fileName;
 
-            if (!file_exists($folderPath)) {
-                mkdir($folderPath, 0755, true);
+            if (s3_configured()) {
+                s3_disk()->put($filePath, $fileContent, 'public');
+            } else {
+                $localFolder = getFilePath('conversation') . "/" . $subFolder;
+                if (!file_exists($localFolder)) {
+                    mkdir($localFolder, 0755, true);
+                }
+                file_put_contents($localFolder . "/" . $fileName, $fileContent);
             }
-
-            file_put_contents($filePath, $fileContent);
 
             return $subFolder . "/" . $fileName;
         } catch (Exception $ex) {
@@ -748,7 +797,7 @@ class WhatsAppLib
                     'unseenMessage'   => $conversation->unseenMessages()->count() < 10 ? $conversation->unseenMessages()->count() : '9+',
                     'lastMessageAt'   => showDateTime(Carbon::now()),
                     'conversationId'  => $conversation->id,
-                    'mediaPath'       => getFilePath('conversation')
+                    'mediaPath'       => s3_configured() ? url('api/inbox/media/by-path/') : getFilePath('conversation')
                 ]));
             }
         }

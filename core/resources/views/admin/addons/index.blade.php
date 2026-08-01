@@ -28,6 +28,23 @@
                                 <p class="addon-card__description">
                                     {{ __($addon->description) }}
                                 </p>
+                                @if ($addon->update_available)
+                                    <button type="button" class="addon-update-notice update-addon-btn"
+                                        data-addon-id="{{ $addon->id }}" data-addon-name="{{ $addon->name }}"
+                                        data-current-version="{{ $addon->version }}"
+                                        data-update-version="{{ $addon->update_available }}">
+                                        <span class="addon-update-notice__icon">
+                                            <i class="las la-arrow-up"></i>
+                                        </span>
+                                        <span class="addon-update-notice__content">
+                                            <small>@lang('Update available')</small>
+                                            <strong>v{{ $addon->update_available }}</strong>
+                                        </span>
+                                        <span class="addon-update-notice__action">
+                                            @lang('Update now') <i class="las la-angle-right"></i>
+                                        </span>
+                                    </button>
+                                @endif
                             </div>
                             <div class="addon-card__bottom">
                                 <div class="addon-card__meta-info">
@@ -101,13 +118,13 @@
     </div>
 
     <x-admin.ui.modal id="install-modal">
-        <x-admin.ui.modal.header>
+        <x-admin.ui.modal.header class="install-form-content">
             <h4 class="modal-title">@lang('Install New Addon')</h4>
             <button type="button" class="btn-close close" data-bs-dismiss="modal" aria-label="Close">
                 <i class="las la-times"></i>
             </button>
         </x-admin.ui.modal.header>
-        <x-admin.ui.modal.body>
+        <x-admin.ui.modal.body class="install-form-content">
             <form action="{{ route('admin.addons.upload') }}" method="POST" enctype="multipart/form-data"
                 class="upload-form no-submit-loader">
                 @csrf
@@ -136,6 +153,103 @@
 
             </form>
         </x-admin.ui.modal.body>
+        <x-admin.ui.modal.header class="install-progress-content d-none">
+            <h4 class="modal-title">@lang('Installing Addon')</h4>
+        </x-admin.ui.modal.header>
+        <x-admin.ui.modal.body class="install-progress-content d-none">
+            <div class="addon-installation-progress" role="status" aria-live="polite">
+                <div class="addon-installation-progress__loader" aria-hidden="true">
+                    <span class="addon-installation-progress__ring"></span>
+                    <span class="addon-installation-progress__ring addon-installation-progress__ring--inner"></span>
+                    <i class="las la-box-open"></i>
+                </div>
+                <h5 class="addon-installation-progress__title">@lang('Setting up your addon')</h5>
+                <p class="addon-installation-progress__description">
+                    @lang('The package is being uploaded, verified, and installed. This may take a while.')
+                </p>
+                <div class="addon-installation-progress__bar" aria-hidden="true">
+                    <span></span>
+                </div>
+                <p class="addon-installation-progress__note">
+                    <i class="las la-info-circle"></i>
+                    @lang('Please keep this window open until the installation is complete.')
+                </p>
+            </div>
+        </x-admin.ui.modal.body>
+    </x-admin.ui.modal>
+
+    <x-admin.ui.modal id="update-addon-modal">
+        <x-admin.ui.modal.header class="update-form-content">
+            <div>
+                <span class="addon-update-modal__eyebrow">@lang('Addon update')</span>
+                <h4 class="modal-title mb-0">@lang('Upload Update Package')</h4>
+            </div>
+            <button type="button" class="btn-close close" data-bs-dismiss="modal" aria-label="Close">
+                <i class="las la-times"></i>
+            </button>
+        </x-admin.ui.modal.header>
+        <x-admin.ui.modal.body class="update-form-content">
+            <form action="{{ route('admin.addons.version.upload') }}" method="POST" enctype="multipart/form-data"
+                class="addon-update-form no-submit-loader">
+                @csrf
+                <input type="hidden" name="addon_id" class="update-addon-id">
+
+                <div class="addon-update-summary">
+                    <div class="addon-update-summary__icon"><i class="las la-cube"></i></div>
+                    <div class="addon-update-summary__details">
+                        <small>@lang('You are updating')</small>
+                        <strong class="update-addon-name"></strong>
+                        <span>
+                            <span class="update-current-version"></span>
+                            <i class="las la-long-arrow-alt-right"></i>
+                            <b class="update-target-version"></b>
+                        </span>
+                    </div>
+                    <span class="addon-update-summary__badge">@lang('Update')</span>
+                </div>
+
+                <label class="addon-update-dropzone" for="addon-update-file" tabindex="0">
+                    <input type="file" name="update_zip" id="addon-update-file" accept=".zip,application/zip"
+                        required>
+                    <span class="addon-update-dropzone__graphic">
+                        <i class="las la-cloud-upload-alt"></i>
+                    </span>
+                    <strong>@lang('Drop the update ZIP here')</strong>
+                    <span>@lang('or click to browse from your computer')</span>
+                    <small class="addon-update-file-name">@lang('ZIP files only')</small>
+                </label>
+
+                <div class="addon-update-security-note">
+                    <i class="las la-shield-alt"></i>
+                    <span>@lang('The package slug and version will be verified before any update is allowed.')</span>
+                </div>
+
+                <button type="submit" class="btn btn--primary w-100 addon-update-submit">
+                    <i class="las la-cloud-upload-alt"></i> @lang('Upload & Verify Update')
+                </button>
+            </form>
+        </x-admin.ui.modal.body>
+        <x-admin.ui.modal.header class="update-progress-content d-none">
+            <h4 class="modal-title">@lang('Verifying Update')</h4>
+        </x-admin.ui.modal.header>
+        <x-admin.ui.modal.body class="update-progress-content d-none">
+            <div class="addon-installation-progress" role="status" aria-live="polite">
+                <div class="addon-installation-progress__loader" aria-hidden="true">
+                    <span class="addon-installation-progress__ring"></span>
+                    <span class="addon-installation-progress__ring addon-installation-progress__ring--inner"></span>
+                    <i class="las la-shield-alt"></i>
+                </div>
+                <h5 class="addon-installation-progress__title">@lang('Checking your update package')</h5>
+                <p class="addon-installation-progress__description">
+                    @lang('The ZIP file is being uploaded while its addon identity and target version are securely verified.')
+                </p>
+                <div class="addon-installation-progress__bar" aria-hidden="true"><span></span></div>
+                <p class="addon-installation-progress__note">
+                    <i class="las la-info-circle"></i>
+                    @lang('Please keep this window open until verification is complete.')
+                </p>
+            </div>
+        </x-admin.ui.modal.body>
     </x-admin.ui.modal>
 
 
@@ -156,8 +270,18 @@
         "use strict";
         (function($) {
             const $modal = $("#install-modal");
+            const $formContent = $modal.find('.install-form-content');
+            const $progressContent = $modal.find('.install-progress-content');
+            let isInstalling = false;
+
             $('.install-btn').on('click', function() {
                 $modal.modal('show');
+            });
+
+            $modal.on('hide.bs.modal', function(e) {
+                if (isInstalling) {
+                    e.preventDefault();
+                }
             });
 
             $(".upload-form").on('submit', function(e) {
@@ -166,6 +290,7 @@
                 const $submitBtn = $this.find('button[type="submit"]');
                 const oldHtml = $submitBtn.html();
                 const formData = new FormData($this[0]);
+                let installationSucceeded = false;
 
                 $.ajax({
                     url: $this.attr('action'),
@@ -174,17 +299,21 @@
                     processData: false,
                     contentType: false,
                     beforeSend() {
+                        isInstalling = true;
                         $submitBtn.prop('disabled', true)
                             .addClass('disabled')
                             .text("@lang('Uploading')...");
+                        $formContent.addClass('d-none');
+                        $progressContent.removeClass('d-none');
+                        $modal.attr('aria-busy', 'true');
                     },
                     success(response) {
                         notify(response.status, response.message);
                         if (response.status == 'success') {
-                            $modal.modal('hide');
+                            installationSucceeded = true;
                             setTimeout(() => {
                                 location.reload();
-                            }, 1500);
+                            }, 500);
                         }
                     },
                     error(e) {
@@ -193,6 +322,132 @@
                     },
                     complete() {
                         $submitBtn.prop('disabled', false).removeClass('disabled').html(oldHtml);
+
+                        if (!installationSucceeded) {
+                            isInstalling = false;
+                            $modal.removeAttr('aria-busy');
+                            $progressContent.addClass('d-none');
+                            $formContent.removeClass('d-none');
+                        }
+                    }
+                });
+            });
+
+            const $updateModal = $('#update-addon-modal');
+            const $updateFormContent = $updateModal.find('.update-form-content');
+            const $updateProgressContent = $updateModal.find('.update-progress-content');
+            const $updateForm = $updateModal.find('.addon-update-form');
+            const $updateInput = $('#addon-update-file');
+            const $dropzone = $updateModal.find('.addon-update-dropzone');
+            const defaultFileLabel = "@lang('ZIP files only')";
+            let isUpdating = false;
+
+            function setUpdateFile(file) {
+                if (!file || !file.name.toLowerCase().endsWith('.zip')) {
+                    notify('error', "@lang('Please select a valid ZIP file.')");
+                    $updateInput.val('');
+                    $dropzone.removeClass('has-file');
+                    $updateModal.find('.addon-update-file-name').text(defaultFileLabel);
+                    return;
+                }
+
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                $updateInput[0].files = transfer.files;
+                $dropzone.addClass('has-file');
+                $updateModal.find('.addon-update-file-name').text(file.name);
+            }
+
+            $('.update-addon-btn').on('click', function() {
+                const $button = $(this);
+
+                $updateForm.find('.update-addon-id').val($button.data('addon-id'));
+                $updateModal.find('.update-addon-name').text($button.data('addon-name'));
+                $updateModal.find('.update-current-version').text('v' + $button.data('current-version'));
+                $updateModal.find('.update-target-version').text('v' + $button.data('update-version'));
+                $updateModal.modal('show');
+            });
+
+            $dropzone.on('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    $updateInput.trigger('click');
+                }
+            }).on('dragenter dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                $(this).addClass('is-dragging');
+            }).on('dragleave', function(e) {
+                e.preventDefault();
+                $(this).removeClass('is-dragging');
+            }).on('drop', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                $(this).removeClass('is-dragging');
+                setUpdateFile(e.originalEvent.dataTransfer.files[0]);
+            });
+
+            $updateInput.on('change', function() {
+                setUpdateFile(this.files[0]);
+            });
+
+            $updateModal.on('hide.bs.modal', function(e) {
+                if (isUpdating) {
+                    e.preventDefault();
+                }
+            }).on('hidden.bs.modal', function() {
+                $updateForm[0].reset();
+                $dropzone.removeClass('has-file is-dragging');
+                $updateModal.find('.addon-update-file-name').text(defaultFileLabel);
+                $updateProgressContent.addClass('d-none');
+                $updateFormContent.removeClass('d-none');
+                $updateModal.removeAttr('aria-busy');
+            });
+
+            $updateForm.on('submit', function(e) {
+                e.preventDefault();
+                const $submitBtn = $(this).find('button[type="submit"]');
+                const oldHtml = $submitBtn.html();
+                let updateSucceeded = false;
+
+                $.ajax({
+                    url: $(this).attr('action'),
+                    method: $(this).attr('method'),
+                    data: new FormData(this),
+                    processData: false,
+                    contentType: false,
+                    beforeSend() {
+                        isUpdating = true;
+                        $submitBtn.prop('disabled', true);
+                        $updateFormContent.addClass('d-none');
+                        $updateProgressContent.removeClass('d-none');
+                        $updateModal.attr('aria-busy', 'true');
+                    },
+                    success(response) {
+                        notify(response.status, response.message);
+
+                        if (response.status == 'success') {
+                            updateSucceeded = true;
+                            setTimeout(() => {
+                                isUpdating = false;
+                                $updateModal.one('hidden.bs.modal', () => location.reload());
+                                $updateModal.modal('hide');
+                            }, 1500);
+                        }
+                    },
+                    error(e) {
+                        const message = e.responseJSON?.message || "@lang('The update package could not be verified.')";
+                        notify('error', message);
+                    },
+                    complete() {
+                        $submitBtn.prop('disabled', false).html(oldHtml);
+
+                        if (!updateSucceeded) {
+                            isUpdating = false;
+                            $updateModal.removeAttr('aria-busy');
+                            $updateProgressContent.addClass('d-none');
+                            $updateFormContent.removeClass('d-none');
+                        }
                     }
                 });
             });
@@ -422,7 +677,9 @@
         /* Card Element: middle */
         .addon-card__middle {
             flex-grow: 1;
-            margin-bottom: 2rem;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1rem;
         }
 
         .addon-card__name {
@@ -439,7 +696,7 @@
             color: hsl(var(--body-color));
             line-height: 1.55;
             display: -webkit-box;
-
+            margin-bottom: 1.5rem;
         }
 
         /* Card Element: bottom (Single-row flex) */
@@ -639,6 +896,397 @@
             margin-bottom: 1rem;
             border-bottom: 2px dashed hsl(var(--border-color));
             padding-bottom: 2rem;
+        }
+
+        .addon-update-notice {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: auto;
+            padding: 0.8rem 0.9rem;
+            color: hsl(var(--title-color));
+            text-align: left;
+            background: linear-gradient(105deg, hsl(var(--primary) / 0.11), hsl(var(--primary) / 0.035));
+            border: 1px solid hsl(var(--primary) / 0.22);
+            border-radius: 13px;
+            box-shadow: 0 8px 22px hsl(var(--primary) / 0.07);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .addon-update-notice::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.2) 48%, transparent 65%);
+            transform: translateX(-120%);
+            animation: addonUpdateShimmer 4.5s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .addon-update-notice:hover,
+        .addon-update-notice:focus-visible {
+            transform: translateY(-2px);
+            border-color: hsl(var(--primary) / 0.5);
+            box-shadow: 0 10px 26px hsl(var(--primary) / 0.13);
+            outline: none;
+        }
+
+        .addon-update-notice__icon {
+            width: 35px;
+            height: 35px;
+            flex: 0 0 35px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: hsl(var(--primary));
+            background-color: hsl(var(--primary) / 0.13);
+            border-radius: 10px;
+        }
+
+        .addon-update-notice__icon i {
+            font-size: 1.15rem;
+            animation: addonUpdateArrow 1.8s ease-in-out infinite;
+        }
+
+        .addon-update-notice__content {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
+        }
+
+        .addon-update-notice__content small {
+            color: hsl(var(--body-color));
+            font-size: 0.68rem;
+        }
+
+        .addon-update-notice__content strong {
+            color: hsl(var(--primary));
+            font-size: 0.9rem;
+        }
+
+        .addon-update-notice__action {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            margin-left: auto;
+            color: hsl(var(--primary));
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .addon-update-modal__eyebrow {
+            display: block;
+            margin-bottom: 0.2rem;
+            color: hsl(var(--primary));
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .addon-update-form {
+            padding: 0.3rem 0.15rem 0.25rem;
+        }
+
+        .addon-update-summary {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            margin-bottom: 1.25rem;
+            padding: 1rem;
+            background: linear-gradient(120deg, hsl(var(--primary) / 0.09), transparent);
+            border: 1px solid hsl(var(--border-color));
+            border-radius: 14px;
+        }
+
+        .addon-update-summary__icon {
+            width: 44px;
+            height: 44px;
+            flex: 0 0 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: hsl(var(--primary));
+            background-color: hsl(var(--primary) / 0.12);
+            border-radius: 12px;
+            font-size: 1.35rem;
+        }
+
+        .addon-update-summary__details {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .addon-update-summary__details small {
+            color: hsl(var(--body-color));
+            font-size: 0.7rem;
+        }
+
+        .addon-update-summary__details strong {
+            overflow: hidden;
+            color: hsl(var(--title-color));
+            font-size: 0.95rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .addon-update-summary__details span {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            color: hsl(var(--body-color));
+            font-size: 0.72rem;
+        }
+
+        .addon-update-summary__details b {
+            color: hsl(var(--primary));
+        }
+
+        .addon-update-summary__badge {
+            margin-left: auto;
+            padding: 0.3rem 0.65rem;
+            color: hsl(var(--primary));
+            background-color: hsl(var(--primary) / 0.1);
+            border: 1px solid hsl(var(--primary) / 0.18);
+            border-radius: 50px;
+            font-size: 0.64rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .addon-update-dropzone {
+            min-height: 205px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            color: hsl(var(--body-color));
+            text-align: center;
+            background-color: hsl(var(--primary) / 0.025);
+            border: 2px dashed hsl(var(--border-color));
+            border-radius: 16px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .addon-update-dropzone:hover,
+        .addon-update-dropzone:focus-visible,
+        .addon-update-dropzone.is-dragging {
+            background-color: hsl(var(--primary) / 0.075);
+            border-color: hsl(var(--primary));
+            outline: none;
+        }
+
+        .addon-update-dropzone.is-dragging {
+            transform: scale(1.012);
+        }
+
+        .addon-update-dropzone.has-file {
+            background-color: hsl(var(--success) / 0.06);
+            border-color: hsl(var(--success) / 0.55);
+        }
+
+        .addon-update-dropzone input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            opacity: 0;
+        }
+
+        .addon-update-dropzone__graphic {
+            width: 58px;
+            height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 0.75rem;
+            color: hsl(var(--primary));
+            background-color: hsl(var(--primary) / 0.1);
+            border-radius: 50%;
+            font-size: 1.8rem;
+        }
+
+        .addon-update-dropzone strong {
+            margin-bottom: 0.2rem;
+            color: hsl(var(--title-color));
+            font-size: 0.95rem;
+        }
+
+        .addon-update-dropzone > span:not(.addon-update-dropzone__graphic) {
+            font-size: 0.75rem;
+        }
+
+        .addon-update-file-name {
+            max-width: 100%;
+            margin-top: 0.75rem;
+            padding: 0.3rem 0.7rem;
+            overflow: hidden;
+            color: hsl(var(--primary));
+            background-color: hsl(var(--primary) / 0.08);
+            border-radius: 50px;
+            font-size: 0.68rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .addon-update-security-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.45rem;
+            margin: 1rem 0;
+            color: hsl(var(--body-color));
+            font-size: 0.72rem;
+            line-height: 1.45;
+        }
+
+        .addon-update-security-note i {
+            flex-shrink: 0;
+            margin-top: 0.05rem;
+            color: hsl(var(--success));
+            font-size: 1rem;
+        }
+
+        .addon-update-submit {
+            min-height: 46px;
+            border-radius: 11px;
+        }
+
+        @keyframes addonUpdateShimmer {
+            0%, 65% { transform: translateX(-120%); }
+            100% { transform: translateX(120%); }
+        }
+
+        @keyframes addonUpdateArrow {
+            0%, 100% { transform: translateY(2px); }
+            50% { transform: translateY(-2px); }
+        }
+
+        .addon-installation-progress {
+            max-width: 470px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem 2rem;
+            text-align: center;
+        }
+
+        .addon-installation-progress__loader {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 92px;
+            height: 92px;
+            margin-bottom: 1.75rem;
+            color: hsl(var(--primary));
+        }
+
+        .addon-installation-progress__loader i {
+            font-size: 2rem;
+        }
+
+        .addon-installation-progress__ring {
+            position: absolute;
+            inset: 0;
+            border: 2px solid hsl(var(--border-color));
+            border-top-color: hsl(var(--primary));
+            border-radius: 50%;
+            animation: addonInstallerSpin 1.4s linear infinite;
+        }
+
+        .addon-installation-progress__ring--inner {
+            inset: 9px;
+            border-width: 1px;
+            border-top-color: transparent;
+            border-right-color: hsl(var(--primary) / 0.55);
+            animation-direction: reverse;
+            animation-duration: 2s;
+        }
+
+        .addon-installation-progress__title {
+            margin-bottom: 0.65rem;
+            color: hsl(var(--title-color));
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .addon-installation-progress__description {
+            max-width: 410px;
+            margin: 0 auto 1.5rem;
+            color: hsl(var(--body-color));
+            font-size: 0.875rem;
+            line-height: 1.65;
+        }
+
+        .addon-installation-progress__bar {
+            position: relative;
+            height: 4px;
+            max-width: 340px;
+            margin: 0 auto 1.5rem;
+            overflow: hidden;
+            background-color: hsl(var(--border-color));
+            border-radius: 10px;
+        }
+
+        .addon-installation-progress__bar span {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: -35%;
+            width: 35%;
+            background-color: hsl(var(--primary));
+            border-radius: inherit;
+            animation: addonInstallerProgress 1.8s ease-in-out infinite;
+        }
+
+        .addon-installation-progress__note {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            margin: 0;
+            color: hsl(var(--body-color));
+            font-size: 0.78rem;
+            opacity: 0.8;
+        }
+
+        .addon-installation-progress__note i {
+            flex-shrink: 0;
+            font-size: 1rem;
+        }
+
+        @keyframes addonInstallerSpin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes addonInstallerProgress {
+            0% {
+                left: -35%;
+            }
+
+            55%,
+            100% {
+                left: 100%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .addon-update-notice::after,
+            .addon-update-notice__icon i,
+            .addon-installation-progress__ring,
+            .addon-installation-progress__bar span {
+                animation: none;
+            }
         }
     </style>
 @endpush

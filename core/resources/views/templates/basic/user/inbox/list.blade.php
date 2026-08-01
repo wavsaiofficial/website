@@ -6,6 +6,9 @@
 @extends($activeTemplate . 'layouts.master')
 
 @section('content')
+    <div class="text-end d-flex justify-content-start gap-3 align-items-center">
+        <span class="filter-icon"> <i class="fas fa-stream"></i> </span>
+    </div>
     <div class="chatbox-area">
         @include('Template::user.inbox.conversation')
         <div class="chatbox-area__body @if (!$selectedConversationId) d-none @endif">
@@ -227,13 +230,15 @@
 
 @push('script-lib')
     <script src="{{ asset($activeTemplateTrue . 'js/pusher.min.js') }}"></script>
-    <script src="{{ asset($activeTemplateTrue . 'js/broadcasting.js') }}"></script>
+    <script src="{{ asset($activeTemplateTrue . 'js/broadcasting.js') }}?v=2.4"></script>
     @if ($teleGramInstalled)
         <script src="{{ asset($activeTemplateTrue . 'js/lottie-player.js') }}"></script>
     @endif
-    <script
-        src="https://maps.googleapis.com/maps/api/js?key={{ gs('google_maps_api') }}&libraries=drawing,places,marker&v=3.45.8">
-    </script>
+    @if (gs('google_maps_api'))
+        <script
+            src="https://maps.googleapis.com/maps/api/js?key={{ gs('google_maps_api') }}&libraries=drawing,places,marker&v=3.45.8">
+        </script>
+    @endif
 @endpush
 
 
@@ -287,6 +292,10 @@
             const $urlInput = $('input[name=cta_url_id]');
             const $listInput = $('input[name=interactive_list_id]');
             const $previewContainer = $(".image-preview-container");
+            const $messageInput = $(".message-input");
+            const $replyToMessage = $('.reply-to-message');
+            const $replyToMessageTitle = $('.reply-to-message__title');
+            const $replyToMessageText = $('.reply-to-message__text');
             const $voiceRecorderPanel = $('.voice-recorder-panel');
             const $voiceRecorderTimer = $('.voice-recorder-timer');
             const $voiceRecorderLabel = $('.voice-recorder-label');
@@ -297,6 +306,7 @@
             const $voiceRecorderCancel = $('.voice-recorder-cancel');
             window.wooCommerceProduct = null;
             window.createdOrderData = null;
+            window.replyTo = null;
 
             let isSubmitting = false;
             let mediaRecorder = null;
@@ -332,6 +342,10 @@
                     formData.append('animation_url', window?.animation || '');
                     formData.append('bot_id', $("#bot_id").val());
 
+                    if (window.replyTo?.wa_message_id) {
+                        formData.append('wa_message_id', window.replyTo.wa_message_id);
+                    }
+
                     if (wooCommerceProduct !== null) {
                         formData.append('product', JSON.stringify(wooCommerceProduct));
                     }
@@ -355,6 +369,7 @@
                             if (response.status == 'success') {
                                 $form.trigger('reset');
                                 window.animation = "";
+                                window.clearReplyTo();
                                 $messageBody.append(response.data.html);
                                 if (response.data.conversationId && response.data.lastMessageHtml) {
                                     $(`.chat-list__item[data-id="${response.data.conversationId}"]`)
@@ -389,6 +404,72 @@
 
             handleFormSubmit($messageForm, "{{ route('user.inbox.message.send') }}");
             handleFormSubmit($locationForm, "{{ route('user.inbox.message.send') }}");
+
+            window.clearReplyTo = function() {
+                window.replyTo = null;
+                $replyToMessageText.text('');
+                $replyToMessage.addClass('d-none');
+            };
+
+            $messageBody.on('click keydown', '.parent-message-wrapper', function(event) {
+                if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+
+                event.preventDefault();
+
+                const repliedMessageId = String($(this).attr('data-message-id') || '');
+                if (!repliedMessageId) return;
+
+                const $targetMessage = $messageBody.find('.single-message').filter(function() {
+                    return String($(this).attr('data-message-id')) === repliedMessageId;
+                }).first();
+
+                if (!$targetMessage.length) return;
+
+                const targetScrollTop = $messageBody.scrollTop() + $targetMessage.offset().top -
+                    $messageBody.offset().top -
+                    (($messageBody.innerHeight() - $targetMessage.outerHeight()) / 2);
+
+                $messageBody.stop().animate({
+                    scrollTop: Math.max(0, targetScrollTop)
+                }, 300, function() {
+                    $targetMessage.removeClass('replied-message-highlight');
+                    void $targetMessage[0].offsetWidth;
+                    $targetMessage.addClass('replied-message-highlight');
+
+                    setTimeout(() => {
+                        $targetMessage.removeClass('replied-message-highlight');
+                    }, 1600);
+                });
+            });
+
+            $messageBody.on('click', '.message-reply-button', function() {
+                const waMessageId = $(this).attr('data-message-id');
+                if (!waMessageId) return;
+
+                const messageText = String($(this).attr('data-message-text'));
+
+                window.replyTo = {
+                    wa_message_id: String(waMessageId),
+                    message: messageText
+                };
+
+                const contactName = $('.contact__name').text().trim();
+                const contactMobile = $('.contact__mobile').text().trim();
+
+                $replyToMessageTitle.text(contactName || contactMobile);
+                $replyToMessageText.html(messageText);
+                $replyToMessage.removeClass('d-none');
+                $messageInput.trigger('focus');
+            });
+
+            $('.reply-to-message__cancel').on('click', function() {
+                window.clearReplyTo();
+                $messageInput.trigger('focus');
+            });
+
+            $('.chat-list').on('click', '.chat-list__item', function() {
+                window.clearReplyTo();
+            });
 
             $(document).on('submit', '.contactSearch', function(e) {
                 e.preventDefault();
@@ -432,8 +513,6 @@
                 });
             });
 
-            const $messageInput = $(".message-input");
-
             $messageInput.keydown(function(e) {
                 if (e.key === "Enter") {
                     e.preventDefault();
@@ -445,7 +524,7 @@
                 }
             });
 
-            $messageInput.on("focus", function() {
+            $messageInput.on("focus click", function() {
                 if (!window.conversation_id) return;
                 let route = "{{ route('user.inbox.message.status', ':id') }}";
                 $.ajax({
@@ -453,12 +532,10 @@
                     type: "GET",
                     success: function(response) {
                         if (response.status == 'success') {
-                            if (response.data.unseenMessageCount == 0) {
-                                $('.chat-list__item[data-id="' + window.conversation_id + '"]')
-                                    .find('.unseen-message').html('');
-                                $('.chat-list__item[data-id="' + window.conversation_id + '"]')
-                                    .find('.last-message-text').removeClass('text--bold');
-                            }
+                            $('.chat-list__item[data-id="' + window.conversation_id + '"]')
+                                .find('.unseen-message').html('');
+                            $('.chat-list__item[data-id="' + window.conversation_id + '"]')
+                                .find('.last-message').find('.text').removeClass('text--bold');
                         }
                     }
                 });
@@ -673,65 +750,65 @@
             });
 
             const pusherConnection = (eventName, whatsapp) => {
-                pusher.connection.bind('connected', () => {
-                    const SOCKET_ID = pusher.connection.socket_id;
-                    const CHANNEL_NAME = `private-${eventName}-${whatsapp}`;
-                    pusher.config.authEndpoint = makeAuthEndPointForPusher(SOCKET_ID, CHANNEL_NAME);
-                    let channel = pusher.subscribe(CHANNEL_NAME);
-                    channel.bind('pusher:subscription_succeeded', function() {
-                        channel.bind(eventName, function(data) {
-                            $("body").find('.empty-conversation').remove();
-                            $("body").find(".chatbox-area__body").removeClass('d-none');
-                            const {
-                                messageId
-                            } = data.data;
+                const channelName = `private-${eventName}-${whatsapp}`;
+                const channel = pusher.subscribe(channelName);
 
-                            if ($messageBody.find(`[data-message-id="${messageId}"]`)
-                                .length) {
-                                $messageBody.find(
-                                        `[data-message-id="${data.data.messageId}"]`)
-                                    .find('.message-status').html(data.data.statusHtml);
-                            } else {
+                channel.bind(eventName, function(data) {
+                    $("body").find('.empty-conversation').remove();
+                    $("body").find(".chatbox-area__body").removeClass('d-none');
+                    const {
+                        messageId
+                    } = data.data;
 
-                                if (data.data.conversationId == window.conversation_id) {
-                                    $messageBody.append(data.data.html);
-                                    setTimeout(() => {
-                                        $messageBody.scrollTop($messageBody[0]
-                                            .scrollHeight);
-                                    }, 50);
-                                }
+                    if ($messageBody.find(`[data-message-id="${messageId}"]`)
+                        .length) {
+                        $messageBody.find(
+                                `[data-message-id="${data.data.messageId}"]`)
+                            .find('.message-status').html(data.data.statusHtml);
+                    } else {
 
-                                if (data.data.newContact) {
-                                    window.conversation_id = data.data.conversationId;
-                                    window.fetchChatList("", true);
-                                } else {
-                                    let targetConversation = $('body').find(
-                                        `.chat-list__item[data-id="${data.data.conversationId}"]`
-                                    );
+                        if (data.data.conversationId == window.conversation_id) {
+                            $messageBody.append(data.data.html);
+                            setTimeout(() => {
+                                $messageBody.scrollTop($messageBody[0]
+                                    .scrollHeight);
+                            }, 50);
+                        }
 
-                                    if (data.data.lastMessageHtml) {
-                                        targetConversation.find('.last-message').html(
-                                            data.data.lastMessageHtml);
+                        if (data.data.newContact) {
+                            window.conversation_id = data.data.conversationId;
+                            window.fetchChatList("", true);
+                        } else {
+                            let targetConversation = $('body').find(
+                                `.chat-list__item[data-id="${data.data.conversationId}"]`
+                            );
 
-                                        targetConversation.find('.unseen-message').html(
-                                            `<span class="number">${data.data.unseenMessage}</span>`
-                                        );
-                                        targetConversation.find('.last-message-at').text(
-                                            data.data.lastMessageAt);
-                                    }
-                                }
+                            if (data.data.lastMessageHtml) {
+                                targetConversation.find('.last-message').html(
+                                    data.data.lastMessageHtml);
+
+                                targetConversation.find('.unseen-message').html(
+                                    `<span class="number">${data.data.unseenMessage}</span>`
+                                );
+                                targetConversation.find('.last-message-at').text(
+                                    data.data.lastMessageAt);
                             }
+                        }
+                    }
 
-                        })
-                    });
+                });
+
+                channel.bind('pusher:subscription_error', function(error) {
+                    console.error(`Pusher subscription failed for ${channelName}`, error);
                 });
             };
 
-            @if (request('channel') && request('channel') == Status::CHANNEL_TELEGRAM && $teleGramInstalled)
-                pusherConnection('receive-message', `telegram-${window.telegram_bot_id}`);
-            @else
-                pusherConnection('receive-message', "{{ $whatsappAccount->id }}");
-            @endif
+            // TODO:: Uncomment this. 
+            // @if (request('channel') && request('channel') == Status::CHANNEL_TELEGRAM && $teleGramInstalled)
+            //     pusherConnection('receive-message', `telegram-${window.telegram_bot_id}`);
+            // @else
+            //     pusherConnection('receive-message', "{{ $whatsappAccount->id }}");
+            // @endif
 
             $('.chat-media__btn, .chat-media__list').on('click', function() {
                 $('.chat-media__list').toggleClass('show');
@@ -743,10 +820,11 @@
             });
 
             const input = document.getElementById("searchBox");
+            const hasGoogleMapsApiKey = @json((bool) gs('google_maps_api'));
 
             $('.location-modal-btn').on('click', function() {
-                if (!"{{ gs('google_maps_api') }}" || "{{ gs('google_maps_api') }}" == "") {
-                    $('.preview-item__content').html(
+                if (!hasGoogleMapsApiKey) {
+                    $('.google-map').html(
                         `<div class="empty-preview"><h6 class="empty-preview__title">@lang('Google Maps preview is currently unavailable.')</h6></div>`
                     );
                     input.remove();
@@ -849,6 +927,8 @@
             }
 
             function markMapFromInputs() {
+                if (!hasGoogleMapsApiKey || !window.google?.maps || !map) return;
+
                 const latVal = parseFloat($locationModal.find('input[name="latitude"]').val());
                 const lngVal = parseFloat($locationModal.find('input[name="longitude"]').val());
 
@@ -1258,14 +1338,14 @@
                         <div class="row_wrapper">
                             ${section.rows.map(row => {
                                 return `
-                                                                                                                                                                                                                                                                        <div class="message-preview-list__row">
-                                                                                                                                                                                                                                                                            <div class="message-preview-list__text">
-                                                                                                                                                                                                                                                                                <p class="title">${row.title}</p>
-                                                                                                                                                                                                                                                                                <p class="desc">${row.description}</p>
-                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                            <span class="message-preview-list__radio"></span>
-                                                                                                                                                                                                                                                                        </div>
-                                                                                                                                                                                                                                                                        `;
+                                                                                                                                                                                                                                                                                                        <div class="message-preview-list__row">
+                                                                                                                                                                                                                                                                                                            <div class="message-preview-list__text">
+                                                                                                                                                                                                                                                                                                                <p class="title">${row.title}</p>
+                                                                                                                                                                                                                                                                                                                <p class="desc">${row.description}</p>
+                                                                                                                                                                                                                                                                                                            </div>
+                                                                                                                                                                                                                                                                                                            <span class="message-preview-list__radio"></span>
+                                                                                                                                                                                                                                                                                                        </div>
+                                                                                                                                                                                                                                                                                                        `;
                             }).join('')}
                         </div>
                     </div>
@@ -1961,6 +2041,87 @@
             .woo-commerce-btn-group {
                 flex-wrap: wrap;
             }
+        }
+
+        .message-reply-button {
+            position: absolute !important;
+            right: -20px;
+            top: 50%;
+            transform: translate(50%, -30%);
+            cursor: pointer;
+        }
+
+        .parent-message-wrapper {
+            position: relative;
+            width: 100%;
+            min-width: 0;
+            margin-bottom: 8px;
+            padding: 8px 10px 8px 12px;
+            overflow: hidden;
+            border-radius: 6px;
+            background: #f0f2f5;
+            color: #667781;
+            cursor: pointer;
+        }
+
+        .parent-message-wrapper:focus-visible {
+            outline: 2px solid hsl(var(--base));
+            outline-offset: 2px;
+        }
+
+        .replied-message-highlight .message-content {
+            animation: replied-message-highlight 1.5s ease-out;
+        }
+
+        @keyframes replied-message-highlight {
+
+            0%,
+            35% {
+                box-shadow: 0 0 0 4px hsl(var(--base) / 0.35);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 hsl(var(--base) / 0);
+            }
+        }
+
+        .message--right .parent-message-wrapper {
+            background: rgba(255, 255, 255, 0.58);
+        }
+
+        .parent-message-wrapper::before {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 4px;
+            background: hsl(var(--base));
+            content: '';
+        }
+
+        .parent-message-text {
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .parent-message-title {
+            color: hsl(var(--base));
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.35;
+        }
+
+        .parent-message-content {
+            display: -webkit-box;
+            overflow: hidden;
+            color: #667781;
+            font-size: 12px;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
         }
     </style>
 @endpush

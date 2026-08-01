@@ -33,7 +33,6 @@ trait InboxManager
         $conversationId  = request()->conversation ?? 0;
         $whatsappAccount = getWhatsappAccount($user);
 
-
         if ($contactId && $whatsappAccount) {
             $conversation = Conversation::where('user_id', $user->id)->where('contact_id', $contactId)->where('whatsapp_account_id', $whatsappAccount->id)->first();
             if (!$conversation) {
@@ -46,9 +45,7 @@ trait InboxManager
             $conversationId = $conversation->id;
         }
 
-
-
-        $templates = Template::where('user_id', $user->id)->approved()->orderBy('id', 'desc')->get();
+        $templates = Template::where('user_id', $user->id)->orderBy('id', 'desc')->get();
         $pageTitle = "Manage Inbox";
         $view      = 'Template::user.inbox.whatsapp_account_empty';
 
@@ -73,8 +70,6 @@ trait InboxManager
 
     public function conversationList(Request $request)
     {
-
-
         $user  = getParentUser();
         $query = Conversation::where('user_id', $user->id)
             ->whereHas('contact')
@@ -95,7 +90,6 @@ trait InboxManager
             $query->where('whatsapp_account_id', getWhatsappAccountId($user))->where('conversation_channel', Status::CHANNEL_WHATSAPP);
         }
 
-
         $query->orderBy('last_message_at', 'desc');
 
         if ($request->status && $request->status != 0  && $request->status !=  "assigned") {
@@ -114,7 +108,6 @@ trait InboxManager
             }
         }
 
-
         $conversations    = $query->apiQuery();
         $html             = null;
         $conversationList = null;
@@ -126,8 +119,6 @@ trait InboxManager
             $html                 = view('Template::user.inbox.conversation_list', compact('conversations', 'activeConversationId'))->render();
             $conversationList     = $conversations;
         }
-
-
 
         $notify[] = "Chat list";
         return apiResponse(
@@ -145,8 +136,6 @@ trait InboxManager
 
     public function conversationMessages($conversationId)
     {
-
-
         $user         = getParentUser();
         $conversation = Conversation::where('user_id', $user->id)->with('contact');
         $telegramIsInstalled = addonIsInstalled('tele-wpp');
@@ -176,13 +165,13 @@ trait InboxManager
         }
 
         $messageQuery = Message::where('conversation_id', $conversationId)
+            ->with('replyTo')
             ->searchable(['message']);
 
         $messages         = $messageQuery->orderBy('ordering', 'desc')->paginate();
         $html             = null;
         $statusHtml       = null;
         $aiReplyHtml      = null;
-        $conversationList = null;
         $assignHtml       = null;
 
         if (!isApiRequest()) {
@@ -202,7 +191,7 @@ trait InboxManager
                 'messages'            => $messages,
                 'contact'             => $conversation->contact,
                 'profilePath'         => getFilePath('contactProfile'),
-                'mediaBasePath'       => getFilePath('conversation'),
+                'mediaBasePath'       => s3_configured() ? 'api/inbox/media/by-path' : getFilePath('conversation'),
                 'html'                => $html,
                 'more'                => $messages->hasMorePages(),
                 'whatsapp_account_id' => @$user->currentWhatsapp()?->id,
@@ -271,7 +260,7 @@ trait InboxManager
     public function changeConversationStatus(Request $request, $conversationId)
     {
         $request->validate([
-            'status' => ['nullable', "integer", Rule::in([Status::DONE_CONVERSATION, Status::PENDING_CONVERSATION, Status::IMPORTANT_CONVERSATION, 0])]
+            'status' => ['nullable', "integer", Rule::in([Status::DONE_CONVERSATION, Status::PENDING_CONVERSATION, Status::IMPORTANT_CONVERSATION, 0,Status::UNREAD_CONVERSATION])]
         ]);
 
         $user         = getParentUser();
@@ -401,7 +390,9 @@ trait InboxManager
         if (count($messages) > 0) {
             foreach ($messages as $message) {
                 if ($message->media_path) {
-                    if (file_exists(getFilePath('conversation') . '/' . $message->media_path)) {
+                    if (s3_configured()) {
+                        s3_disk()->delete('conversation/' . $message->media_path);
+                    } elseif (file_exists(getFilePath('conversation') . '/' . $message->media_path)) {
                         unlink(getFilePath('conversation') . '/' . $message->media_path);
                     }
                 }
@@ -476,6 +467,7 @@ trait InboxManager
         $wooCommerceProduct = null;
         $createdOrderData   = null;
         $ctaUrlData         = null;
+        $replyToMessage     = null;
         $user               = getParentUser();
         $conversation       = Conversation::where('user_id', $user->id)->find($request->conversation_id);
 
@@ -509,6 +501,10 @@ trait InboxManager
 
         if ($request->created_order_data) {
             $createdOrderData = json_decode($request->created_order_data, true);
+        }
+
+        if($request->wa_message_id) {
+            $replyToMessage = Message::query()->where('conversation_id',$conversation->id)->find($request->wa_message_id);
         }
 
         try {
@@ -552,7 +548,7 @@ trait InboxManager
                     $messageSend = (new WhatsAppLib())->sendInteractiveListMessage($conversation->contact->mobileNumber, $whatsappAccount, $interactiveList);
                 }
             } else {
-                $messageSend = (new WhatsAppLib())->messageSend($request, $conversation->contact->mobileNumber, $whatsappAccount);
+                $messageSend = (new WhatsAppLib())->messageSend($request, $conversation->contact->mobileNumber, $whatsappAccount,$replyToMessage);
             }
 
             extract($messageSend);
@@ -575,6 +571,7 @@ trait InboxManager
             $message->user_id             = $user->id;
             $message->whatsapp_account_id = $whatsappAccount->id;
             $message->whatsapp_message_id = $whatsAppMessage[0]['id'];
+            $message->reply_to_id         = @$replyToMessage->id ?? 0;
             $message->conversation_id     = $conversation->id;
             $message->cta_url_id          = $ctaUrlId ?? 0;
             $message->interactive_list_id = $interactiveListId ?? 0;
@@ -755,18 +752,33 @@ trait InboxManager
             return apiResponse("message_not_found", "error", ["Message not found"]);
         }
 
-        $accessToken = $user->currentWhatsapp()->access_token;
-
         try {
             if ($message->message_type == Status::IMAGE_TYPE_MESSAGE) {
-                $filePath = getFilePath('conversation') . "/" . $message->media_path;
-
-                if ($message->media_path && File::exists($filePath)) {
-                    return response()->download($filePath);
-                } else {
-                    return responseManager('exception', "Failed to load the media");
+                if ($message->media_path) {
+                    if (s3_configured()) {
+                        $fileContent = s3_disk()->get('conversation/' . $message->media_path);
+                        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                        $mimeType = $finfo->buffer($fileContent);
+                        $extension = pathinfo($message->media_path, PATHINFO_EXTENSION);
+                        $fileName = $message->media_id . '.' . $extension;
+                        return response($fileContent, 200)
+                            ->header('Content-Type', $mimeType)
+                            ->header('Content-Disposition', "attachment; filename={$fileName}");
+                    } else {
+                        $filePath = getFilePath('conversation') . "/" . $message->media_path;
+                        if (File::exists($filePath)) {
+                            return response()->download($filePath);
+                        }
+                    }
                 }
+                return responseManager('exception', "Failed to load the media");
             }
+
+            $whatsapp = $user->currentWhatsapp();
+            if (!$whatsapp) {
+                return responseManager('exception', "WhatsApp account not found");
+            }
+            $accessToken = $whatsapp->access_token;
 
             $mediaUrl = (new WhatsAppLib())
                 ->getMediaUrl($mediaId, $accessToken)['url'];
@@ -787,6 +799,71 @@ trait InboxManager
             return response($fileContent, 200)
                 ->header('Content-Type', $mimeType)
                 ->header('Content-Disposition', "attachment; filename={$fileName}");
+        } catch (Exception $ex) {
+            return responseManager('exception', $ex->getMessage());
+        }
+    }
+
+    public function viewMedia($mediaId)
+    {
+        $user = getParentUser();
+
+        $message = Message::where('media_id', $mediaId)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if (!$message) {
+            return responseManager('exception', "Message not found");
+        }
+
+        try {
+            if ($message->message_type == Status::IMAGE_TYPE_MESSAGE && $message->media_path) {
+                if (s3_configured()) {
+                    $fileContent = s3_disk()->get('conversation/' . $message->media_path);
+                } else {
+                    $filePath = getFilePath('conversation') . "/" . $message->media_path;
+                    $fileContent = file_get_contents($filePath);
+                }
+
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo->buffer($fileContent);
+                $extension = pathinfo($message->media_path, PATHINFO_EXTENSION);
+                $fileName = $message->media_id . '.' . $extension;
+
+                return response($fileContent, 200)
+                    ->header('Content-Type', $mimeType)
+                    ->header('Content-Disposition', "inline; filename={$fileName}");
+            }
+
+            return $this->downloadMedia($mediaId);
+        } catch (Exception $ex) {
+            return responseManager('exception', $ex->getMessage());
+        }
+    }
+
+    public function serveMediaByPath($path)
+    {
+        $message = Message::where('media_path', $path)->first();
+
+        if (!$message || !$message->media_path) {
+            return responseManager('exception', "Media not found");
+        }
+
+        try {
+            if (s3_configured()) {
+                $fileContent = s3_disk()->get('conversation/' . $message->media_path);
+            } else {
+                $filePath = getFilePath('conversation') . "/" . $message->media_path;
+                if (!file_exists($filePath)) {
+                    return responseManager('exception', "File not found");
+                }
+                $fileContent = file_get_contents($filePath);
+            }
+
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            return response($fileContent, 200)
+                ->header('Content-Type', $finfo->buffer($fileContent))
+                ->header('Content-Disposition', "inline");
         } catch (Exception $ex) {
             return responseManager('exception', $ex->getMessage());
         }

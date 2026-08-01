@@ -1,3 +1,7 @@
+@php
+    $singleWhatsappAccount = count($userWhatsAppAccounts) == 1;
+    $whatsappAccount = $singleWhatsappAccount ? $userWhatsAppAccounts->first() : null;
+@endphp
 @extends($activeTemplate . 'layouts.master')
 @section('content')
     <div class="dashboard-container">
@@ -106,22 +110,24 @@
                     </button>
                 </div>
                 <div class="modal-body">
-                    <div class="form-group mb-3">
-                        <div class="alert alert--warning flex-column  border border-1 border--warning">
-                            <div class="alert__content">
-                                <p class="mb-2">
-                                    <i class="las la-info-circle"></i>
-                                    <strong>@lang('You have multiple WhatsApp accounts. Please select the WhatsApp account for which you want to create a new automation flow.')</strong>
-                                </p>
+                    @if (!$singleWhatsappAccount)
+                        <div class="form-group mb-3">
+                            <div class="alert alert--warning flex-column  border border-1 border--warning">
+                                <div class="alert__content">
+                                    <p class="mb-2">
+                                        <i class="las la-info-circle"></i>
+                                        <strong>@lang('You have multiple WhatsApp accounts. Please select the WhatsApp account for which you want to create a new automation flow.')</strong>
+                                    </p>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    @endif
                     <div class="form-group mb-3">
                         <label for="whatsappAccount">@lang('WhatsApp Account')</label>
                         <select class="form--control select2" id="whatsappAccount" required>
                             <option value="">@lang('Select an account')</option>
                             @foreach ($userWhatsAppAccounts as $account)
-                                <option value="{{ route('user.flow.builder.create') }}?account={{ $account->id }}">
+                                <option value="{{ route('user.flow.builder.create') }}?account={{ $account->id }}" @selected($whatsappAccount->id == $account->id)>
                                     {{ __(@$account->business_name) }} - {{ __(@$account->phone_number) }}
                                 </option>
                             @endforeach

@@ -43,6 +43,10 @@
                         <p class="text text-muted">
                             <i class="las la-undo"></i> @lang('Reply Button')
                         </p>
+                    @elseif (@$lastMessage->message_type == Status::URL_TYPE_MESSAGE)
+                        <p class="text text-muted">
+                            <i class="las la-paperclip"></i> @lang('Cta URL')
+                        </p>
                     @else
                         @if (@$lastMessage->message_type == Status::LOCATION_TYPE_MESSAGE)
                             <p class="text text-muted">

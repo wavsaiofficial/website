@@ -104,14 +104,25 @@ class AutomationLib
             if ($node->type == Status::NODE_TYPE_TEXT) {
                 $request['message'] = $node->text;
             } elseif ($node->media) {
-                $filePath = getFilePath('flowBuilderMedia') . '/' . $node->media->media_path;
-                $uploadedFile = new UploadedFile($filePath, basename($filePath), mime_content_type($filePath), null, true);
+                $nodeMediaPath = 'flowBuilderMedia/' . $node->media->media_path;
+                $tempFilePath = null;
+                if (s3_configured()) {
+                    $tempFilePath = tempnam(sys_get_temp_dir(), 's3_');
+                    file_put_contents($tempFilePath, s3_disk()->get($nodeMediaPath));
+                    $uploadedFile = new UploadedFile($tempFilePath, basename($node->media->media_path), s3_disk()->mimeType($nodeMediaPath), null, true);
+                } else {
+                    $filePath = getFilePath('flowBuilderMedia') . '/' . $node->media->media_path;
+                    $uploadedFile = new UploadedFile($filePath, basename($filePath), mime_content_type($filePath), null, true);
+                }
                 $request[getNodeMediaStringType($node->media->media_type)] = $uploadedFile;
             } elseif ($node->type == Status::NODE_TYPE_LOCATION && $node->location) {
                 $request['latitude'] = $node->location['latitude'];
                 $request['longitude'] = $node->location['longitude'];
             }
             $messageSend = $whatsappLib->messageSend($request, $conversation->contact->mobileNumber, $whatsappAccount);
+            if (isset($tempFilePath) && file_exists($tempFilePath)) {
+                unlink($tempFilePath);
+            }
         }
 
         if(!$messageSend) return;
@@ -157,7 +168,7 @@ class AutomationLib
             'unseenMessage'   => $conversation->unseenMessages()->count() < 10 ? $conversation->unseenMessages()->count() : '9+',
             'lastMessageAt'   => showDateTime(Carbon::now()),
             'conversationId'  => $conversation->id,
-            'mediaPath'       => getFilePath('conversation')
+            'mediaPath'       => s3_configured() ? url('api/inbox/media/by-path/') : getFilePath('conversation')
         ]));
 
         $state = ContactFlowState::where('conversation_id', $conversation->id)

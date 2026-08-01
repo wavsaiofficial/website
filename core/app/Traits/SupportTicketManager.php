@@ -159,8 +159,9 @@ trait SupportTicketManager
         if ($this->apiRequest) {
             $notify[] = 'Support ticket view';
             return apiResponse("ticket_view", "success", $notify, [
-                'my_ticket' => $myTicket,
-                'messages'  => $messages,
+                'my_ticket'     => $myTicket,
+                'messages'      => $messages,
+                'mediaBasePath' => s3_configured() ? 'api/attachment/support' : getFilePath('ticket'),
             ]);
         }
 
@@ -264,8 +265,15 @@ trait SupportTicketManager
         foreach ($this->files as  $file) {
             try {
                 $attachment                     = new SupportAttachment();
+                if (s3_configured()) {
+                    $ext = $file->getClientOriginalExtension();
+                    $filename = uniqid() . '.' . $ext;
+                    s3_disk()->put('ticket/' . $filename, file_get_contents($file->getRealPath()), 'public');
+                    $attachment->attachment = $filename;
+                } else {
+                    $attachment->attachment = fileUploader($file, $path);
+                }
                 $attachment->support_message_id = $messageId;
-                $attachment->attachment         = fileUploader($file, $path);
                 $attachment->save();
             } catch (\Exception $exp) {
                 $notify[] = ['error', 'File could not upload'];
@@ -363,6 +371,27 @@ trait SupportTicketManager
         $file     = $attachment->attachment;
         $path     = getFilePath('ticket');
         $fullPath = $path . '/' . $file;
+
+        if (s3_configured()) {
+            try {
+                $fileContent = s3_disk()->get('ticket/' . $file);
+                $mimetype = s3_disk()->mimeType('ticket/' . $file);
+                $title    = slug($attachment->supportMessage->ticket->subject);
+                $ext      = pathinfo($file, PATHINFO_EXTENSION);
+                header('Content-Disposition: attachment; filename="' . $title . '.' . $ext . '";');
+                header("Content-Type: " . $mimetype);
+                echo $fileContent;
+                exit;
+            } catch (\Exception $e) {
+                if ($this->apiRequest) {
+                    $notify[] = 'Attachment not found';
+                    return apiResponse("attachment_not_found", "error", $notify);
+                }
+                $notify[] = ['error', 'Attachment not found'];
+                return back()->withNotify($notify);
+            }
+        }
+
         if (!file_exists($fullPath)) {
             if ($this->apiRequest) {
                 $notify[] = 'Attachment not found';
@@ -377,5 +406,37 @@ trait SupportTicketManager
         header('Content-Disposition: attachment; filename="' . $title . '.' . $ext . '";');
         header("Content-Type: " . $mimetype);
         return readfile($fullPath);
+    }
+
+    public function serveSupportAttachment(Request $request, $filename)
+    {
+        if($request->path){
+            $path = $request->path;
+        }else {
+            $path = 'ticket';
+        }
+
+        $fullPath = getFilePath($path) . '/' . $filename;
+
+        if (s3_configured()) {
+            try {
+                $fileContent = s3_disk()->get($path.'/'.$filename);
+                $mimetype = s3_disk()->mimeType($path.'/'.$filename);
+                return response($fileContent, 200)
+                    ->header('Content-Type', $mimetype)
+                    ->header('Content-Disposition', 'inline');
+            } catch (\Exception $e) {
+                return responseManager('exception', "File not found");
+            }
+        }
+
+        if (!file_exists($fullPath)) {
+            return responseManager('exception', "File not found");
+        }
+
+        $mimetype = mime_content_type($fullPath);
+        return response(file_get_contents($fullPath), 200)
+            ->header('Content-Type', $mimetype)
+            ->header('Content-Disposition', 'inline');
     }
 }

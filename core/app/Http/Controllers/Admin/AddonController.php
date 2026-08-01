@@ -6,10 +6,12 @@ use App\Constants\Status;
 use App\Http\Controllers\Controller;
 use App\Models\InstalledAddon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
+use Spatie\Permission\PermissionRegistrar;
 use ZipArchive;
 
 class AddonController extends Controller
@@ -48,6 +50,7 @@ class AddonController extends Controller
         }
 
         $purchaseCode = trim($request->purchase_code);
+        $envatoUsername = trim($request->envato_username);
 
         // Store ZIP temporarily
         $zipFile = $request->file('addon_zip');
@@ -55,46 +58,28 @@ class AddonController extends Controller
         $zipFile->move(storage_path('app/temp/addon'), $zipFile->getClientOriginalName());
 
         try {
+            $meta = $this->readAddonJson($zipPath);
 
-            //purchase code validation first
+            $verification = $this->verifyAddonPurchase($purchaseCode, $envatoUsername, $meta['slug']);
 
-            $response = Http::post(
-                "https://ovosolution.com/verify-purchase/addon_server/addon-verify",
-                [
-                    'purchase_code'   => $purchaseCode,
-                    'envato_username' => $request->envato_username
-                ],
-            );
-
-            $data       = $response->json();
-
-            if ($response->failed()) {
-                $message = isset($data['errors']) ? $data['errors'] : 'Something went to wrong, please try again later.';
-                $message = is_array($message) ? $message : [$message];
-                return apiResponse('error', 'error', $message);
+            if ($verification['status'] == 'error') {
+                return apiResponse('error', 'error', [$verification['message']]);
             }
-
-            if (isset($data['errors']) && !is_null($data['errors'])) {
-                $message = isset($data['errors']) ? $data['errors'] : 'Something went to wrong, please try again later.';
-                $message = is_array($message) ? $message : [$message];
-                return apiResponse('error', 'error', $message);
-            }
-
 
             ///Read addon.json from ZIP without extracting 
-            $meta                       = $this->readAddonJson($zipPath);
             $destinationAfterExtractZip = $this->extractZip($zipPath, $meta['name']);
 
             //need upload database
-            $newAddon                = new InstalledAddon();
-            $newAddon->name          = $meta['name'];
-            $newAddon->title         = $meta['title'];
-            $newAddon->slug          = $meta['slug'];
-            $newAddon->description   = $meta['description'];
-            $newAddon->provider      = $meta['provider'];
-            $newAddon->author        = $meta['author'];
-            $newAddon->version       = $meta['version'] ?? '1.0';
-            $newAddon->purchase_code = $purchaseCode;
+            $newAddon                  = new InstalledAddon();
+            $newAddon->name            = $meta['name'];
+            $newAddon->title           = $meta['title'];
+            $newAddon->slug            = $meta['slug'];
+            $newAddon->description     = $meta['description'];
+            $newAddon->provider        = $meta['provider'];
+            $newAddon->author          = $meta['author'];
+            $newAddon->version         = $meta['version'] ?? '1.0';
+            $newAddon->purchase_code   = $purchaseCode;
+            $newAddon->envato_username = $envatoUsername;
             $newAddon->save();
 
 
@@ -103,7 +88,7 @@ class AddonController extends Controller
             @unlink($zipPath);
 
             //need upload addon database
-            $databaseFile = $destinationAfterExtractZip . '/Source/database/version/' . $newAddon->version . '/database.sql';
+            $databaseFile = $destinationAfterExtractZip . '/Source/database/database.sql';
 
             sleep(2);
 
@@ -112,6 +97,7 @@ class AddonController extends Controller
                 DB::unprepared($databaseStatement);
             }
 
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             return apiResponse('success', "success", ["Addon installed successfully!"]);
         } catch (\Exception $e) {
@@ -121,8 +107,141 @@ class AddonController extends Controller
         }
     }
 
+    public function versionUpload(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'addon_id'   => 'required|integer|exists:installed_addons,id',
+            'update_zip' => 'required|file|mimes:zip',
+        ]);
 
-    private function readAddonJson(string $zipPath): ?array
+        if ($validator->fails()) {
+            return apiResponse('Validation failed', 'error', $validator->errors()->all(), [], 422);
+        }
+
+        $addon = InstalledAddon::find($request->addon_id);
+
+        if (!$addon || !$addon->update_available) {
+            return apiResponse('Update unavailable', 'error', ['There is no pending update for this addon.'], [], 422);
+        }
+
+        try {
+            if (!extension_loaded('zip')) {
+                throw new \Exception('The PHP Zip extension is required to verify addon updates.');
+            }
+
+            $meta = $this->readAddonJson($request->file('update_zip')->getRealPath(), ['slug', 'version']);
+
+            $verification = $this->verifyAddonPurchase(
+                trim($addon->purchase_code),
+                trim($addon->envato_username),
+                $meta['slug'],
+                true
+            );
+
+            if ($verification['status'] == 'error') {
+                return apiResponse('error', 'error', [$verification['message']]);
+            }
+
+            if ((string) $meta['slug'] !== (string) $addon->slug) {
+                return apiResponse('Invalid addon package', 'error', ['This update file is for a different addon. Please upload the package for ' . $addon->name . '.'], [], 422);
+            }
+
+            if ((string) $meta['version'] !== (string) $addon->update_available) {
+                return apiResponse('Invalid addon version', 'error', ['Version ' . $addon->update_available . ' is required, but the uploaded package contains version ' . $meta['version'] . '.'], [], 422);
+            }
+
+            $this->mergeAddonUpdate($request->file('update_zip')->getRealPath(), $addon->name);
+
+            $databaseFile = base_path('addons/' . $addon->name . '/Source/database/database.sql');
+
+            if (file_exists($databaseFile)) {
+                $databaseStatement = file_get_contents($databaseFile);
+                DB::unprepared($databaseStatement);
+            }
+
+            $addon->version          = $meta['version'];
+            $addon->update_available = null;
+            $addon->save();
+
+            Cache::forget('installed_addons_active');
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            Artisan::call('optimize:clear');
+
+            if (function_exists('opcache_reset')) {
+                @opcache_reset();
+            }
+
+            return apiResponse('Addon updated', 'success', ['The ' . $addon->name . ' addon was updated to v' . $meta['version'] . ' successfully.']);
+        } catch (\Throwable $e) {
+            return apiResponse('Addon update failed', 'error', [$e->getMessage() ?: 'The addon could not be updated.'], [], 422);
+        }
+    }
+
+    private function verifyAddonPurchase(string $purchaseCode, string $envatoUsername, string $slug, $update = false): ?array
+    {
+        $url = 'https://ovosolution.com/verify-purchase/addon_server/addon-verify';
+        if($update){
+            $url = 'https://ovosolution.com/verify-purchase/addon_server/addon-update-verify';
+        }
+        $response = Http::post(
+            $url,
+            [
+                'purchase_code'   => $purchaseCode,
+                'envato_username' => $envatoUsername,
+                'addon_slug'      => $slug,
+            ]
+        );
+
+        $data = $response->json();
+        if ($response->failed()) {
+            return [
+                'status'  => 'error',
+                'message' => @$data['message'] ?? 'Something went to wrong, please try again later.'
+            ];
+        }
+
+        if ($data['success'] == false && !$data['errors']) {
+            return [
+                'status'  => 'error',
+                'message' => $data['message'] ?? 'Something went to wrong, please try again later.'
+            ];
+        }
+
+        return [
+            'status'  => 'success',
+            'message' => @$data['message'] ?? 'The addon was successfully verified.'
+        ];
+
+    }
+
+    private function mergeAddonUpdate(string $zipPath, string $name): void
+    {
+        $destination = base_path('addons/' . $name);
+
+        if (!is_dir($destination)) {
+            throw new \Exception('The installed addon directory could not be found.');
+        }
+
+        if (!is_writable($destination)) {
+            throw new \Exception('The installed addon directory is not writable. Please check its permissions.');
+        }
+
+        $zip = new ZipArchive();
+
+        if ($zip->open($zipPath) !== true) {
+            throw new \Exception('Could not open ZIP file.');
+        }
+
+        try {
+            if (!$zip->extractTo($destination)) {
+                throw new \Exception('The addon update files could not be extracted.');
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
+    private function readAddonJson(string $zipPath, array $requiredFields = ['name', 'title', 'slug', 'version', 'author', 'description', 'provider']): ?array
     {
 
         $zip = new ZipArchive();
@@ -143,7 +262,7 @@ class AddonController extends Controller
 
         $zip->close();
 
-        if (!$json || !is_array($json) || !isset($json['name'], $json['title'], $json['slug'], $json['version'], $json['author'], $json['description'], $json['provider'])) {
+        if (!$json || !is_array($json) || array_diff($requiredFields, array_keys($json))) {
             @unlink($zipPath);
             throw new \Exception('Invalid addon package. The config.json is not found.');
         }

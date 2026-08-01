@@ -12,6 +12,7 @@ use App\Models\Coupon;
 use App\Models\CronJob;
 use App\Models\CronJobLog;
 use App\Models\FlowNodeMedia;
+use App\Models\InstalledAddon;
 use App\Models\Message;
 use App\Models\PlanPurchase;
 use Carbon\Carbon;
@@ -187,9 +188,18 @@ class CronController extends Controller
                 $contact->save();
 
                 $template = $campaign->template;
-                $url      = "https://graph.facebook.com/v22.0/{$phoneNumberId}/messages?access_token={$accessToken}";
-
                 $contactOriginal = $contact->contact;
+
+                if (
+                    strtoupper($template->category?->name ?? '') === 'MARKETING'
+                    && $contactOriginal->is_marketing_opted_out == Status::YES
+                ) {
+                    $contact->error_message = 'Promotional message not sent because the contact opted out of marketing messages.';
+                    $contact->save();
+                    continue;
+                }
+
+                $url      = "https://graph.facebook.com/v22.0/{$phoneNumberId}/messages?access_token={$accessToken}";
 
                 $templateHeaderParams = $campaign->template_header_params ?? [];
                 $templateBodyParams   = $campaign->template_body_params ?? [];
@@ -363,13 +373,20 @@ class CronController extends Controller
         $trashMedia = FlowNodeMedia::whereDoesntHave('node')->where('created_at', '<=', Carbon::now()->subHour())->get();
 
         foreach ($trashMedia as $media) {
-            $filePath = getFilePath('flowBuilderMedia') . '/' . $media->media_path;
-            if ($media->media_path && file_exists($filePath)) {
-                unlink($filePath);
+            if ($media->media_path) {
+                if (s3_configured()) {
+                    s3_disk()->delete('flowBuilderMedia/' . $media->media_path);
+                } else {
+                    $filePath = getFilePath('flowBuilderMedia') . '/' . $media->media_path;
+                    if (file_exists($filePath)) {
+                        unlink($filePath);
+                    }
+                }
             }
             $media->delete();
         }
     }
+
     public function checkCampaignStatus()
     {
         $campaigns = Campaign::where('status', '!=', Status::CAMPAIGN_COMPLETED)
@@ -420,4 +437,30 @@ class CronController extends Controller
 
         CronJob::where('alias', 'update_campaign_message')->delete();
     }
+
+    public function checkVersionUpdate()
+    {
+        $installedAddons = InstalledAddon::query()->installed()->get();
+
+        $url = 'https://ovosolution.com/verify-purchase/addon_server/api/addon/check-updates';
+
+        $installedAddons->each(function ($addon) use ($url) {
+
+            $payload = [
+                'addon_slug'      => $addon->slug,
+                'current_version' => $addon->version,
+                'main_product'    => systemDetails()['name']
+            ];
+
+            $response    = Http::post($url, $payload);
+            $data        = $response->json();
+            $nextVersion = $data['data']['need_to_update'] ?? null;
+
+            if ($data['status'] == 'success' && !empty($data['data']['available_update']) && $nextVersion && version_compare($nextVersion, $addon->version, '>')) {
+                $addon->update_available = $nextVersion;
+                $addon->save();
+            }
+        });
+    }
+
 }

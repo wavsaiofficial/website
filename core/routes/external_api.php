@@ -18,10 +18,14 @@ Route::middleware(ExternalAPI::class)->group(function () {
     // Inbox
     Route::controller('InboxController')->prefix('inbox')->group(function () {
         Route::get('conversation-list', 'list');
+        Route::get('conversation-messages/{id}', 'conversationMessages');
         Route::get('template-list', 'templateList');
         Route::post('change-conversation-status/{id}', 'changeConversationStatus');
         Route::get('conversation-details/{id}', 'conversationDetails');
         Route::post('send-message', 'sendMessage');
         Route::post('send-template-message', 'sendTemplateMessage');
+        Route::get('media/download/{mediaId}', 'downloadMedia');
+        Route::get('media/view/{mediaId}', 'viewMedia');
+        Route::get('media/by-path/{path}', 'serveMediaByPath')->where('path', '.*');
     });
 });
