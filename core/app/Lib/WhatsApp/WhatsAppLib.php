@@ -178,6 +178,7 @@ class WhatsAppLib
 
         $bodyParams = [];
         $headerParams = [];
+        $buttonParams = [];
 
         foreach (($request->body_variables ?? []) as $value) {
             $bodyParams[] = [
@@ -193,90 +194,19 @@ class WhatsAppLib
             ];
         }
 
+        // keyed by the button position inside the template's button list
+        foreach (($request->button_variables ?? []) as $buttonIndex => $value) {
+            $buttonParams[$buttonIndex] = [
+                'type' => 'text',
+                'text' => $value ?? '',
+            ];
+        }
+
         $templateHeaderParams = parseTemplateParams($headerParams, $contact);
         $templateBodyParams   = parseTemplateParams($bodyParams, $contact);
+        $templateButtonParams = parseTemplateParams($buttonParams, $contact);
 
-        $components = [];
-
-        if (count($template->cards) == 0) {
-            if (is_array($templateHeaderParams) && count($templateHeaderParams)) {
-                $components[] = [
-                    'type' => 'header',
-                    'parameters' => $templateHeaderParams
-                ];
-            } elseif ($template->header_format === 'IMAGE' && !empty($template->header_media)) {
-                $components[] = [
-                    'type' => 'header',
-                    'parameters' => [
-                        [
-                            'type' => 'image',
-                            'image' => [
-                                'link' => url(getFilePath('templateHeader') . '/' . $template->header_media)
-                            ]
-                        ]
-                    ]
-                ];
-            }
-        }
-
-        if (is_array($templateBodyParams) && count($templateBodyParams)) {
-            $components[] = [
-                'type' => 'body',
-                'parameters' => $templateBodyParams
-            ];
-        } else {
-            $components[] = [
-                'type' => 'body',
-                'parameters' => []
-            ];
-        }
-
-        if (!empty($template->cards) && count($template->cards) > 0) {
-            $cards = [];
-
-            foreach ($template->cards as $index => $card) {
-                $cardData = [];
-                $cardData['card_index'] = $index;
-                $cardData['components'] = [];
-
-                if ($card->header_format == 'IMAGE') {
-                    $cardData['components'][] = [
-                        'type' => 'header',
-                        'parameters' => [
-                            [
-                                'type' => 'image',
-                                'image' => [
-                                    'id' => $card->media_id
-                                ]
-                            ]
-                        ]
-                    ];
-                }
-
-                if ($card->buttons && count($card->buttons) > 0) {
-                    $cardButtons = [];
-                    foreach ($card->buttons['buttons'] as $button) {
-                        if ($button['type'] == 'URL') {
-                            $cardButtons[] = [
-                                'type' => 'button',
-                                'sub_type' => strtolower($button['type']),
-                                'index' => $index
-                            ];
-                        }
-                    }
-                    $cardData['components'] = array_merge($cardData['components'], $cardButtons);
-                }
-
-                $cards[] = $cardData;
-            }
-
-            $secondParams = [
-                'type' => 'carousel',
-                'cards' => $cards
-            ];
-
-            $components[] = $secondParams;
-        }
+        $components = $this->buildTemplateComponents($template, $templateHeaderParams, $templateBodyParams, $templateButtonParams);
 
         $data = [
             'messaging_product' => 'whatsapp',
@@ -309,6 +239,234 @@ class WhatsAppLib
         } catch (Exception $ex) {
             throw new Exception($ex->getMessage() ?? "Something went wrong");
         }
+    }
+
+    /**
+     * Build the `components` array of a WhatsApp Cloud API template message.
+     *
+     * Shared by the inbox, the external API, flow nodes and the campaign cron so
+     * every send path produces the same payload.
+     *
+     * @param  array $headerParams  parsed params, e.g. [['type' => 'text', 'text' => 'John']]
+     * @param  array $bodyParams    parsed params, same shape as $headerParams
+     * @param  array $buttonParams  parsed params keyed by button index, e.g. [0 => ['type' => 'text', 'text' => 'ORD-1']]
+     */
+    public function buildTemplateComponents($template, array $headerParams = [], array $bodyParams = [], array $buttonParams = [])
+    {
+        $components = [];
+        $isAuthentication = strtoupper($template->category?->name ?? '') === 'AUTHENTICATION';
+
+        // authentication templates cannot carry a header component
+        if (count($template->cards) == 0 && !$isAuthentication) {
+            if (count($headerParams)) {
+                $components[] = [
+                    'type' => 'header',
+                    'parameters' => array_values($headerParams)
+                ];
+            } elseif ($template->header_format === 'IMAGE' && !empty($template->header_media)) {
+                $components[] = [
+                    'type' => 'header',
+                    'parameters' => [
+                        [
+                            'type' => 'image',
+                            'image' => [
+                                'link' => url(getFilePath('templateHeader') . '/' . $template->header_media)
+                            ]
+                        ]
+                    ]
+                ];
+            }
+        }
+
+        $components[] = [
+            'type' => 'body',
+            'parameters' => array_values($bodyParams)
+        ];
+
+        $components = array_merge($components, $this->templateButtonComponents($template, $bodyParams, $buttonParams));
+
+        if (!empty($template->cards) && count($template->cards) > 0) {
+            $cards = [];
+
+            foreach ($template->cards as $index => $card) {
+                $cardData = [];
+                $cardData['card_index'] = $index;
+                $cardData['components'] = [];
+
+                if ($card->header_format == 'IMAGE') {
+                    $cardData['components'][] = [
+                        'type' => 'header',
+                        'parameters' => [
+                            [
+                                'type' => 'image',
+                                'image' => [
+                                    'id' => $card->media_id
+                                ]
+                            ]
+                        ]
+                    ];
+                } elseif ($card->header_format == 'VIDEO') {
+                    $cardData['components'][] = [
+                        'type' => 'header',
+                        'parameters' => [
+                            [
+                                'type' => 'video',
+                                'video' => [
+                                    'id' => $card->media_id
+                                ]
+                            ]
+                        ]
+                    ];
+                }
+
+                $cardData['components'] = array_merge($cardData['components'], $this->cardButtonComponents($card));
+
+                $cards[] = $cardData;
+            }
+
+            $components[] = [
+                'type' => 'carousel',
+                'cards' => $cards
+            ];
+        }
+
+        return $components;
+    }
+
+    /**
+     * Button components of a non-carousel template.
+     *
+     * Only buttons that need a runtime value produce a component; `index` is the
+     * button's zero based position inside the template's button list, so buttons
+     * that need nothing (quick reply, phone number, static url) still take a slot.
+     */
+    private function templateButtonComponents($template, array $bodyParams, array $buttonParams)
+    {
+        // Meta requires every authentication template to be sent with its OTP button
+        // expressed as a url button holding the same code as the body parameter,
+        // no matter whether the button is COPY_CODE, ONE_TAP or ZERO_TAP.
+        if (strtoupper($template->category?->name ?? '') === 'AUTHENTICATION') {
+            $firstBodyParam = count($bodyParams) ? reset($bodyParams) : [];
+            $otp            = $firstBodyParam['text'] ?? '';
+
+            if ($otp === '' || is_null($otp)) {
+                throw new Exception('An OTP code is required to send this authentication template.');
+            }
+
+            return [
+                [
+                    'type' => 'button',
+                    'sub_type' => 'url',
+                    'index' => '0',
+                    'parameters' => [
+                        [
+                            'type' => 'text',
+                            'text' => $otp
+                        ]
+                    ]
+                ]
+            ];
+        }
+
+        $buttonComponents = [];
+
+        foreach ((is_array($template->buttons) ? $template->buttons : []) as $index => $button) {
+            $type  = strtoupper($button['type'] ?? '');
+            $value = $buttonParams[$index]['text'] ?? null;
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if ($type == 'URL' && $this->hasDynamicVariable($button['url'] ?? '')) {
+                $buttonComponents[] = [
+                    'type' => 'button',
+                    'sub_type' => 'url',
+                    'index' => (string) $index,
+                    'parameters' => [
+                        [
+                            'type' => 'text',
+                            'text' => $value
+                        ]
+                    ]
+                ];
+            } elseif ($type == 'COPY_CODE') {
+                $buttonComponents[] = [
+                    'type' => 'button',
+                    'sub_type' => 'copy_code',
+                    'index' => (string) $index,
+                    'parameters' => [
+                        [
+                            'type' => 'coupon_code',
+                            'coupon_code' => $value
+                        ]
+                    ]
+                ];
+            }
+        }
+
+        return $buttonComponents;
+    }
+
+    /**
+     * Button components of a single carousel card. `index` is the button position
+     * inside that card, and a dynamic url button must carry its suffix parameter.
+     */
+    private function cardButtonComponents($card)
+    {
+        $cardButtons = [];
+
+        foreach (($card->buttons['buttons'] ?? []) as $btnIndex => $button) {
+            if (strtoupper($button['type'] ?? '') != 'URL' || !$this->hasDynamicVariable($button['url'] ?? '')) {
+                continue;
+            }
+
+            // there is no per card button input yet, so fall back to the suffix Meta
+            // stored as the button example when the template was created or imported
+            $suffix = $this->dynamicUrlSuffix($button['url'] ?? '', $button['example'][0] ?? null);
+
+            if ($suffix === null || $suffix === '') {
+                continue;
+            }
+
+            $cardButtons[] = [
+                'type' => 'button',
+                'sub_type' => 'url',
+                'index' => (string) $btnIndex,
+                'parameters' => [
+                    [
+                        'type' => 'text',
+                        'text' => $suffix
+                    ]
+                ]
+            ];
+        }
+
+        return $cardButtons;
+    }
+
+    private function hasDynamicVariable($value)
+    {
+        return (bool) preg_match('/\{\{\s*\d+\s*\}\}/', (string) $value);
+    }
+
+    /**
+     * A dynamic url button is sent with only the part that replaces {{1}}, while Meta
+     * stores the example as a whole url, so strip the static prefix off the example.
+     */
+    private function dynamicUrlSuffix($url, $example)
+    {
+        if ($example === null || $example === '') {
+            return null;
+        }
+
+        $prefix = explode('{{', (string) $url)[0];
+
+        if ($prefix !== '' && str_starts_with($example, $prefix)) {
+            return substr($example, strlen($prefix));
+        }
+
+        return $example;
     }
 
     private function ensureMarketingMessageAllowed($toNumber, $whatsappAccount): void

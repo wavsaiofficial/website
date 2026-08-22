@@ -111,11 +111,11 @@
             $(document).on('click', '.editBtn', function() {
                 let modal = $('#editModal');
                 let data = $(this).data();
-                let route = "{{ route('admin.setting.socialite.credentials.update', '') }}";
+                let route = "{{ route('admin.setting.socialite.credentials.update', '_') }}";
                 let callbackRoute = "{{ route('user.social.login.callback', '') }}";
                 let callbackUrl=`${callbackRoute}/${data.key}`;
 
-                modal.find('form').attr('action', `${route}/${data.key}`);
+                modal.find('form').attr('action', route.replace('/_', '/' + data.key));
                 modal.find('.credential-name').text(data.key);
                 modal.find('[name=client_id]').val(data.client_id);
                 modal.find('[name=client_secret]').val(data.client_secret);

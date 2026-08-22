@@ -4,6 +4,7 @@ namespace App\Http\Controllers\User;
 
 use App\Constants\Status;
 use App\Http\Controllers\Controller;
+use App\Lib\SubscriptionManager;
 use App\Models\Coupon;
 use App\Models\PlanPurchase;
 use App\Models\PricingPlan;
@@ -158,48 +159,24 @@ class PurchasePlanController extends Controller
 
         $discountAmount = getPlanPurchasePrice($pricingPlan, $recurringType) - $purchasePrice;
 
-        $now           = $user->plan_expired_at ? Carbon::parse($user->plan_expired_at) : Carbon::now();
-        $expireAt      = null;
+        $expireAt = SubscriptionManager::nextExpiry($user, $recurringType);
 
-        if ($recurringType == Status::YEARLY) {
-            $expireAt = $now->addYear();
-        } else {
-            $expireAt = $now->addMonth();
-        }
-
-        $purchase                      = new PlanPurchase();
-        $purchase->user_id             = $user->id;
-        $purchase->coupon_id           = $coupon->id ?? 0;
-        $purchase->plan_id             = $pricingPlan->id;
-        $purchase->recurring_type      = $recurringType;
-        $purchase->amount              = $purchasePrice;
-        $purchase->discount_amount     = $discountAmount ?? 0;
-        $purchase->payment_method      = $method;
-        $purchase->gateway_method_code = $methodCode;
-        $purchase->expired_at          = $expireAt;
-        $purchase->save();
+        SubscriptionManager::recordPurchase(
+            user: $user,
+            pricingPlan: $pricingPlan,
+            recurringType: $recurringType,
+            expireAt: $expireAt,
+            amount: $purchasePrice,
+            paymentMethod: $method,
+            methodCode: $methodCode,
+            coupon: $coupon,
+            discountAmount: $discountAmount
+        );
 
         $amount = getAmount($purchasePrice);
 
-        $user->balance             -= $amount;
-        $user->plan_id              = $pricingPlan->id;
-        $user->account_limit        = $pricingPlan->account_limit      == -1 ? -1 : $user->account_limit    + $pricingPlan->account_limit;
-        $user->agent_limit          = $pricingPlan->agent_limit        == -1 ? -1 : $user->agent_limit      + $pricingPlan->agent_limit;
-        $user->contact_limit        = $pricingPlan->contact_limit      == -1 ? -1 : $user->contact_limit    + $pricingPlan->contact_limit;
-        $user->template_limit       = $pricingPlan->template_limit     == -1 ? -1 : $user->template_limit   + $pricingPlan->template_limit;
-        $user->flow_limit           = $pricingPlan->flow_limit         == -1 ? -1 : $user->flow_limit    + $pricingPlan->flow_limit;
-        $user->campaign_limit       = $pricingPlan->campaign_limit     == -1 ? -1 : $user->campaign_limit   + $pricingPlan->campaign_limit;
-        $user->short_link_limit     = $pricingPlan->short_link_limit   == -1 ? -1 : $user->short_link_limit + $pricingPlan->short_link_limit;
-        $user->floater_limit        = $pricingPlan->floater_limit      == -1 ? -1 : $user->floater_limit    + $pricingPlan->floater_limit;
-        if (addonIsInstalled('tele-wpp')) {
-            $user->telegram_bot_limit   = $pricingPlan->telegram_bot_limit == -1 ? -1 : $user->telegram_bot_limit    + $pricingPlan->telegram_bot_limit;
-        }
-        $user->welcome_message      = $pricingPlan->welcome_message;
-        $user->ai_assistance        = $pricingPlan->ai_assistance;
-        $user->interactive_message  = $pricingPlan->interactive_message;
-        $user->ecommerce_available  = $pricingPlan->ecommerce_available;
-        $user->api_available        = $pricingPlan->api_available;
-        $user->plan_expired_at      = $expireAt;
+        $user->balance -= $amount;
+        SubscriptionManager::applyPlan($user, $pricingPlan, $expireAt);
         $user->save();
 
         // Transaction

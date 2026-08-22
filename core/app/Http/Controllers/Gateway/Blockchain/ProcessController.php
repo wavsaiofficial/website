@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Lib\CurlRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -61,19 +62,43 @@ class ProcessController extends Controller
 
     public function ipn(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'invoice_id'    => 'required|string',
+            'value'         => 'required|numeric',
+            'address'       => 'required|string',
+            'secret'        => 'required|string',
+            'confirmations' => 'required|numeric',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
         $track = $request->invoice_id;
         $value_in_btc = $request->value / 100000000;
 
         $deposit = Deposit::where('trx', $track)->orderBy('id', 'DESC')->first();
 
-        foreach ($_GET as $key => $value) {
-            $details[$key] = $value;
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
         }
-        $deposit->detail = $details;
+
+        $paymentValid = $deposit->btc_amount == $value_in_btc
+            && $request->address == $deposit->btc_wallet
+            && $request->secret == "MySecret"
+            && $request->confirmations > 2
+            && $deposit->status == Status::PAYMENT_INITIATE;
+
+        if (!$paymentValid) {
+            return response()->json(['message' => 'Invalid callback'], 400);
+        }
+
+        // Only record the callback payload once the payment itself has been verified.
+        $deposit->detail = $request->all();
         $deposit->save();
 
-        if ($deposit->btc_amount == $value_in_btc && $request->address == $deposit->btc_wallet && $request->secret == "MySecret" && $request->confirmations > 2 && $deposit->status == Status::PAYMENT_INITIATE) {
-            PaymentController::userDataUpdate($deposit);
-        }
+        PaymentController::userDataUpdate($deposit);
+
+        return response()->json(['message' => 'ok']);
     }
 }

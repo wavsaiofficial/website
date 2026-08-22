@@ -8,6 +8,7 @@ use App\Http\Controllers\Gateway\PaymentController;
 use App\Lib\CurlRequest;
 use App\Models\Deposit;
 use App\Models\Gateway;
+use Illuminate\Http\Request;
 
 class ProcessController extends Controller
 {
@@ -56,29 +57,44 @@ class ProcessController extends Controller
         return json_encode($send);
     }
 
-    public function ipn()
+    public function ipn(Request $request)
     {
-        if (isset($_SERVER['HTTP_X_NOWPAYMENTS_SIG']) && !empty($_SERVER['HTTP_X_NOWPAYMENTS_SIG'])) {
-            $recived_hmac = $_SERVER['HTTP_X_NOWPAYMENTS_SIG'];
-            $request_json = file_get_contents('php://input');
-            $request_data = json_decode($request_json, true);
-            ksort($request_data);
-            $sorted_request_json = json_encode($request_data, JSON_UNESCAPED_SLASHES);
-            if ($request_json !== false && !empty($request_json)) {
-                $gateway    = Gateway::where('alias', 'NowPaymentsHosted')->first();
-                $gatewayAcc = json_decode($gateway->gateway_parameters);
-                $hmac       = hash_hmac("sha512", $sorted_request_json, trim($gatewayAcc->secret_key->value));
-                if ($hmac == $recived_hmac) {
-                    if ($request_data['payment_status'] == 'confirmed' || $request_data['payment_status'] == 'finished') {
-                        if ($request_data['actually_paid'] == $request_data['pay_amount']) {
-                            $deposit = Deposit::where('status', Status::PAYMENT_INITIATE)->where('trx', $request_data['order_id'])->first();
-                            if ($deposit) {
-                                PaymentController::userDataUpdate($deposit);
-                            }
-                        }
-                    }
-                }
+        $recived_hmac = $request->header('x-nowpayments-sig');
+
+        if (!$recived_hmac) {
+            return response()->json(['message' => 'Missing signature'], 400);
+        }
+
+        $request_json = file_get_contents('php://input');
+        $request_data = json_decode($request_json, true);
+
+        if (!is_array($request_data) || !isset($request_data['order_id'], $request_data['payment_status'], $request_data['actually_paid'], $request_data['pay_amount'])) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
+        ksort($request_data);
+        $sorted_request_json = json_encode($request_data, JSON_UNESCAPED_SLASHES);
+
+        $gateway = Gateway::where('alias', 'NowPaymentsHosted')->first();
+
+        if (!$gateway) {
+            return response()->json(['message' => 'Gateway not found'], 404);
+        }
+
+        $gatewayAcc = json_decode($gateway->gateway_parameters);
+        $hmac       = hash_hmac("sha512", $sorted_request_json, trim($gatewayAcc->secret_key->value));
+
+        if (!hash_equals($hmac, (string) $recived_hmac)) {
+            return response()->json(['message' => 'Invalid signature'], 400);
+        }
+
+        if (in_array($request_data['payment_status'], ['confirmed', 'finished']) && $request_data['actually_paid'] == $request_data['pay_amount']) {
+            $deposit = Deposit::where('status', Status::PAYMENT_INITIATE)->where('trx', $request_data['order_id'])->first();
+            if ($deposit) {
+                PaymentController::userDataUpdate($deposit);
             }
         }
+
+        return response()->json(['message' => 'ok']);
     }
 }

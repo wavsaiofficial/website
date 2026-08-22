@@ -5,12 +5,19 @@ namespace Database\Seeders;
 use App\Models\AgentPermission;
 use Illuminate\Database\Seeder;
 
+/**
+ * Authoring tool for agent permissions, run by hand when new permissions are introduced:
+ *
+ *     php artisan db:seed --class=PermissionSeeder
+ *
+ * It is deliberately NOT wired into DatabaseSeeder. A fresh installation gets its agent
+ * permissions from Install\AgentPermissionsSeeder, which preserves the shipped ids.
+ */
 class PermissionSeeder extends Seeder
 {
     /**
      * Run the database seeds.
      */
-    // php artisan db:seed --class=PermissionSeeder
     public function run(): void
     {
         $permissions = [

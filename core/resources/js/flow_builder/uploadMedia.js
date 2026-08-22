@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const BASE_URL = document.querySelector("meta[name=APP-DOMAIN]").getAttribute('content');
+import axios, { BASE_URL } from "./http";
 
 export async function uploadMedia(nodeId, file, type) {
     const formData = new FormData();

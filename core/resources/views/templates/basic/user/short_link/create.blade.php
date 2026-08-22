@@ -29,7 +29,7 @@
                                         <label class="label-two">@lang('Short Link')</label>
                                         <div class="input-group short-link">
                                             <div class="input-group-text">
-                                                {{ route('short.link.redirect', '') }}/
+                                                {{ shortLinkBaseUrl() }}/
                                             </div>
                                             <input type="text" name="code" value="{{ old('code', $code) }}"
                                                 class="form--control form-two form-control form-control-lg"

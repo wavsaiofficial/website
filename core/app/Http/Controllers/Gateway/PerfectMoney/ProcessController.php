@@ -6,6 +6,8 @@ use App\Constants\Status;
 use App\Models\Deposit;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -41,38 +43,58 @@ class ProcessController extends Controller
 
         return json_encode($send);
     }
-    public function ipn()
+    public function ipn(Request $request)
     {
-        $deposit = Deposit::where('trx', $_POST['PAYMENT_ID'])->orderBy('id', 'DESC')->first();
+        $validator = Validator::make($request->all(), [
+            'PAYMENT_ID'        => 'required|string',
+            'PAYEE_ACCOUNT'     => 'required|string',
+            'PAYMENT_AMOUNT'    => 'required|numeric',
+            'PAYMENT_UNITS'     => 'required|string',
+            'PAYMENT_BATCH_NUM' => 'required|string',
+            'PAYER_ACCOUNT'     => 'required|string',
+            'TIMESTAMPGMT'      => 'required|string',
+            'V2_HASH'           => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
+        $deposit = Deposit::where('trx', $request->PAYMENT_ID)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
         $pmAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
+
+        // Perfect Money's V2_HASH is specified as MD5, so the algorithm is fixed by the gateway.
+        // hash_equals keeps the comparison timing safe and avoids PHP's loose string compare.
         $passphrase = strtoupper(md5($pmAcc->passphrase));
 
-        define('ALTERNATE_PHRASE_HASH', $passphrase);
-        define('PATH_TO_LOG', '/somewhere/out/of/document_root/');
         $string =
-            $_POST['PAYMENT_ID'] . ':' . $_POST['PAYEE_ACCOUNT'] . ':' .
-            $_POST['PAYMENT_AMOUNT'] . ':' . $_POST['PAYMENT_UNITS'] . ':' .
-            $_POST['PAYMENT_BATCH_NUM'] . ':' .
-            $_POST['PAYER_ACCOUNT'] . ':' . ALTERNATE_PHRASE_HASH . ':' .
-            $_POST['TIMESTAMPGMT'];
+            $request->PAYMENT_ID . ':' . $request->PAYEE_ACCOUNT . ':' .
+            $request->PAYMENT_AMOUNT . ':' . $request->PAYMENT_UNITS . ':' .
+            $request->PAYMENT_BATCH_NUM . ':' .
+            $request->PAYER_ACCOUNT . ':' . $passphrase . ':' .
+            $request->TIMESTAMPGMT;
 
-        $hash = strtoupper(md5($string));
-        $hash2 = $_POST['V2_HASH'];
+        if (!hash_equals(strtoupper(md5($string)), strtoupper((string) $request->V2_HASH))) {
+            return response()->json(['message' => 'Invalid signature'], 400);
+        }
 
-        if ($hash == $hash2) {
+        $amount = $request->PAYMENT_AMOUNT;
+        $unit   = $request->PAYMENT_UNITS;
 
-            foreach ($_POST as $key => $value) {
-                $details[$key] = $value;
-            }
-            $deposit->detail = $details;
+        if ($request->PAYEE_ACCOUNT == $pmAcc->wallet_id && $unit == $deposit->method_currency && $amount == round($deposit->final_amount, 2) && $deposit->status == Status::PAYMENT_INITIATE) {
+            // The payload is only recorded once the payment itself has been verified.
+            $deposit->detail = $request->all();
             $deposit->save();
 
-            $amount = $_POST['PAYMENT_AMOUNT'];
-            $unit = $_POST['PAYMENT_UNITS'];
-            if ($_POST['PAYEE_ACCOUNT'] == $pmAcc->wallet_id && $unit == $deposit->method_currency && $amount == round($deposit->final_amount,2) && $deposit->status == Status::PAYMENT_INITIATE) {
-                //Update User Data
-                PaymentController::userDataUpdate($deposit);
-            }
+            //Update User Data
+            PaymentController::userDataUpdate($deposit);
         }
+
+        return response()->json(['message' => 'ok']);
     }
 }

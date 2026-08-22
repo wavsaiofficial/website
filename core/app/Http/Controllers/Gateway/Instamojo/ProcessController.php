@@ -6,6 +6,7 @@ use App\Constants\Status;
 use App\Models\Deposit;
 use App\Http\Controllers\Gateway\PaymentController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Controller;
 
 class ProcessController extends Controller
@@ -67,18 +68,42 @@ class ProcessController extends Controller
 
     public function ipn(Request $request)
     {
-        $deposit = Deposit::where('btc_wallet', $_POST['payment_request_id'])->orderBy('id', 'DESC')->first();
+        $validator = Validator::make($request->all(), [
+            'payment_request_id' => 'required|string',
+            'mac'                => 'required|string',
+            'status'             => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
+        $deposit = Deposit::where('btc_wallet', $request->payment_request_id)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
         $instaMojoAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
-        $deposit->detail = $request->all();
-        $deposit->save();
-        $imData = $_POST;
+
+        $imData  = $request->all();
         $macSent = $imData['mac'];
         unset($imData['mac']);
         ksort($imData, SORT_STRING | SORT_FLAG_CASE);
         $mac = hash_hmac("sha1", implode("|", $imData), $instaMojoAcc->salt);
 
-        if ($macSent == $mac && $imData['status'] == "Credit" && $deposit->status == Status::PAYMENT_INITIATE) {
+        if (!hash_equals($mac, (string) $macSent)) {
+            return response()->json(['message' => 'Invalid signature'], 400);
+        }
+
+        // Only record the callback payload once its signature has been verified.
+        $deposit->detail = $request->all();
+        $deposit->save();
+
+        if ($request->status == "Credit" && $deposit->status == Status::PAYMENT_INITIATE) {
             PaymentController::userDataUpdate($deposit);
         }
+
+        return response()->json(['message' => 'ok']);
     }
 }

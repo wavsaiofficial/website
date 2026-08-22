@@ -31,6 +31,11 @@ class ProcessController extends Controller
     {
         $track   = Session::get('Track');
         $deposit = Deposit::where('trx', $track)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Invalid request.']]);
+        }
+
         if ($deposit->status == Status::PAYMENT_SUCCESS) {
             $notify[] = ['error', 'Invalid request.'];
             return to_route($deposit->failed_url)->withNotify($notify);
@@ -43,7 +48,7 @@ class ProcessController extends Controller
         $cc        = $request->cardNumber;
         $exp       = $request->cardExpiry;
         $cvc       = $request->cardCVC;
-        $exp       = explode("/", $_POST['cardExpiry']);
+        $exp       = explode("/", (string) $request->cardExpiry);
 
         if (!@$exp[1]) {
             $notify[] = ['error', 'Invalid expiry date provided'];

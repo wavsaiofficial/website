@@ -6,6 +6,8 @@ use App\Constants\Status;
 use App\Models\Deposit;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -41,19 +43,53 @@ class ProcessController extends Controller
     }
 
 
-    public function ipn()
+    public function ipn(Request $request)
     {
-        $deposit = Deposit::where('trx', $_POST['transaction_id'])->orderBy('id', 'DESC')->first();
-        $skrillrAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
-        $concatFields = $_POST['merchant_id']
-            . $_POST['transaction_id']
-            . strtoupper(md5($skrillrAcc->secret_key))
-            . $_POST['mb_amount']
-            . $_POST['mb_currency']
-            . $_POST['status'];
+        $validator = Validator::make($request->all(), [
+            'transaction_id' => 'required|string',
+            'merchant_id'    => 'required|string',
+            'mb_amount'      => 'required|numeric',
+            'mb_currency'    => 'required|string',
+            'status'         => 'required|numeric',
+            'md5sig'         => 'required|string',
+            'pay_to_email'   => 'required|string',
+        ]);
 
-        if (strtoupper(md5($concatFields)) == $_POST['md5sig'] && $_POST['status'] == 2 && $_POST['pay_to_email'] == $skrillrAcc->pay_to_email && $deposit->status = Status::PAYMENT_INITIATE) {
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
+        $deposit = Deposit::where('trx', $request->transaction_id)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
+        $skrillrAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
+
+        // Skrill's protocol fixes md5sig as MD5, so the algorithm is not ours to choose.
+        // hash_equals keeps the comparison timing safe and avoids PHP's loose string compare.
+        $concatFields = $request->merchant_id
+            . $request->transaction_id
+            . strtoupper(md5($skrillrAcc->secret_key))
+            . $request->mb_amount
+            . $request->mb_currency
+            . $request->status;
+
+        $signatureValid = hash_equals(
+            strtoupper(md5($concatFields)),
+            strtoupper((string) $request->md5sig)
+        );
+
+        $payeeValid = hash_equals(
+            (string) $skrillrAcc->pay_to_email,
+            (string) $request->pay_to_email
+        );
+
+        if ($signatureValid && $payeeValid && $request->status == 2 && $deposit->status == Status::PAYMENT_INITIATE) {
             PaymentController::userDataUpdate($deposit);
         }
+
+        return response()->json(['message' => 'ok']);
     }
 }

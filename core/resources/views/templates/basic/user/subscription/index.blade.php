@@ -236,6 +236,9 @@
                                         <option value="{{ Status::GATEWAY_PAYMENT }}" @selected(request()->status === Status::GATEWAY_PAYMENT)>
                                             @lang('Gateway Payment')
                                         </option>
+                                        <option value="{{ Status::ADMIN_ASSIGNED }}" @selected(request()->status === Status::ADMIN_ASSIGNED)>
+                                            @lang('Admin Assigned')
+                                        </option>
                                     </select>
                                 </form>
                             </div>

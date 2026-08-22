@@ -294,6 +294,23 @@ class UserController extends Controller
         return ['success' => true, 'message' => 'Token saved successfully'];
     }
 
+    public function deleteDeviceToken(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'token' => 'required',
+        ]);
+
+        if ($validator->fails()) {
+            return ['success' => false, 'errors' => $validator->errors()->all()];
+        }
+
+        DeviceToken::where('user_id', auth()->user()->id)
+            ->where('token', $request->token)
+            ->delete();
+
+        return ['success' => true, 'message' => 'Token deleted successfully'];
+    }
+
     public function downloadAttachment($fileHash)
     {
         $filePath = decrypt($fileHash);

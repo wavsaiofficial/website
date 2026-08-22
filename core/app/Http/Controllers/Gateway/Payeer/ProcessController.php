@@ -40,6 +40,11 @@ class ProcessController extends Controller
         if (isset($request->m_operation_id) && isset($request->m_sign)) {
 
             $deposit = Deposit::where('trx', $request->m_orderid)->orderBy('id', 'DESC')->first();
+
+            if (!$deposit) {
+                return to_route('user.deposit.index')->withNotify([['error', 'Invalid request']]);
+            }
+
             $payeerAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
             $sign_hash = strtoupper(hash('sha256', implode(":", array(
                 $request->m_operation_id,
@@ -55,7 +60,7 @@ class ProcessController extends Controller
                 $payeerAcc->secret_key
             ))));
 
-            if ($request->m_sign != $sign_hash) {
+            if (!hash_equals($sign_hash, (string) $request->m_sign)) {
                 $notify[] = ['error', 'The digital signature did not matched'];
             } else {
                 if ($request->m_amount == getAmount($deposit->final_amount) && $request->m_curr == $deposit->method_currency && $request->m_status == 'success' && $deposit->status == Status::PAYMENT_INITIATE) {

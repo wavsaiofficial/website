@@ -66,12 +66,15 @@ class ProcessController extends Controller
         $postdata = file_get_contents("php://input");
         $res = json_decode($postdata);
         $deposit = Deposit::where('trx', $res->event->data->metadata->trx)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
         $coinbaseAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
-        $headers = apache_request_headers();
-        $headers = json_decode(json_encode($headers),true);
-        $sentSign = $headers['X-Cc-Webhook-Signature'];
+        $sentSign = request()->header('x-cc-webhook-signature');
         $sig = hash_hmac('sha256', $postdata, $coinbaseAcc->secret);
-        if ($sentSign == $sig) {
+        if (hash_equals($sig, (string) $sentSign)) {
             if ($res->event->type == 'charge:confirmed' && $deposit->status == Status::PAYMENT_INITIATE) {
                 PaymentController::userDataUpdate($deposit);
             }

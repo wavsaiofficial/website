@@ -7,6 +7,8 @@ use App\Http\Controllers\Gateway\PaymentController;
 use App\Http\Controllers\Controller;
 use App\Lib\CurlRequest;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -48,11 +50,23 @@ class ProcessController extends Controller
 
     }
 
-    public function ipn(){
-        $tokenId = $_GET['token-id'];
+    public function ipn(Request $request){
+        $validator = Validator::make($request->all(), [
+            'token-id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Something went wrong']]);
+        }
+
+        $tokenId = $request->input('token-id');
 
         $track = Session::get('Track');
         $deposit = Deposit::where('trx', $track)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Something went wrong']]);
+        }
 
         $credentials = json_decode($deposit->gatewayCurrency()->gateway_parameter);
 

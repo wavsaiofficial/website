@@ -8,6 +8,7 @@ use App\Models\GatewayCurrency;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Gateway\PaymentController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -38,12 +39,34 @@ class ProcessController extends Controller
     public function ipn(Request $request)
     {
 
+        $validator = Validator::make($request->all(), [
+            'order_id' => 'required|string',
+            'currency' => 'required|string',
+            'status'   => 'required|numeric',
+            'ipn_key'  => 'required|string',
+            'web_id'   => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Data invalid']]);
+        }
+
     	$gateway = GatewayCurrency::where('gateway_alias','Cashmaal')->where('currency',$request->currency)->first();
+
+        if (!$gateway) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Data invalid']]);
+        }
+
         $IPN_key=json_decode($gateway->gateway_parameter)->ipn_key;
         $web_id=json_decode($gateway->gateway_parameter)->web_id;
 
 
-        $deposit = Deposit::where('trx', $_POST['order_id'])->orderBy('id', 'DESC')->first();
+        $deposit = Deposit::where('trx', $request->order_id)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Data invalid']]);
+        }
+
         if ($request->ipn_key != $IPN_key && $web_id != $request->web_id) {
         	$notify[] = ['error','Data invalid'];
         	return redirect($deposit->failed_url)->withNotify($notify);
@@ -59,7 +82,7 @@ class ProcessController extends Controller
         	return redirect($deposit->failed_url)->withNotify($notify);
         }
 
-		if($_POST['status'] == 1 && $deposit->status == Status::PAYMENT_INITIATE && $_POST['currency'] == $deposit->method_currency ){
+		if($request->status == 1 && $deposit->status == Status::PAYMENT_INITIATE && $request->currency == $deposit->method_currency ){
 			PaymentController::userDataUpdate($deposit);
             $notify[] = ['success', 'Transaction is successful'];
 		}else{

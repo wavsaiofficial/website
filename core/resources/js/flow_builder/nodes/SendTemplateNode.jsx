@@ -1,15 +1,12 @@
 import { useState, useEffect } from "react";
 import { Position } from "reactflow";
 import NodeWrapper from "./NodeWrapper";
-import axios from "axios";
+import axios, { BASE_URL } from "../http";
 
 export default function SendTemplateNode({ id, data, setNodes }) {
     const handles = data.handles || [
         { type: "target", position: Position.Left },
     ];
-    const BASE_URL = document
-        .querySelector("meta[name=APP-DOMAIN]")
-        .getAttribute("content");
 
     const [templates, setTemplates] = useState([]);
     const [selectedId, setSelectedId] = useState(

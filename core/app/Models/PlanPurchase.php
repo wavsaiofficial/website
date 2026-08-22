@@ -51,7 +51,15 @@ class PlanPurchase extends Model
     {
         return new Attribute(
             get: function () {
-                return  $this->payment_method == Status::WALLET_PAYMENT ? 'Wallet' : 'Gateway' . (@$this->gateway ? (" | " . $this->gateway->name) : '');
+                if ($this->payment_method == Status::ADMIN_ASSIGNED) {
+                    return 'Admin Assigned';
+                }
+
+                if ($this->payment_method == Status::WALLET_PAYMENT) {
+                    return 'Wallet';
+                }
+
+                return 'Gateway' . (@$this->gateway ? (" | " . $this->gateway->name) : '');
             }
         );
     }

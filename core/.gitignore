@@ -4,6 +4,9 @@
 /public/hot
 /public/storage
 /storage/*.key
+# Written by the setup wizard when it finishes. It must never ship inside the package, or a
+# buyer's fresh copy would look already installed and the wizard would never run.
+/storage/installed
 /vendor
 .env
 .env.backup

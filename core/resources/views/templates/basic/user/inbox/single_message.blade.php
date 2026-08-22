@@ -199,15 +199,17 @@
                              data-download-url="{{ route('user.inbox.media.download', $message->media_id) }}">
                      </div>
                  @endif
-                 @if (@$message->message_type == Status::VIDEO_TYPE_MESSAGE)
-                     <div class="text-dark d-flex align-items-center justify-content-between">
-                         <a href="{{ route('user.inbox.media.download', $message->media_id) }}"
-                             class="text--primary download-document">
-                             <img class="message-image" src="{{ asset('assets/images/video_preview.png') }}"
-                                 alt="image">
-                         </a>
-                     </div>
-                 @endif
+                @if (@$message->message_type == Status::VIDEO_TYPE_MESSAGE)
+                    <div class="video-message-wrapper">
+                        <img class="message-video-thumb"
+                            src="{{ asset('assets/images/video_preview.png') }}" alt="video"
+                            data-video-url="{{ route('user.inbox.media.view', $message->media_id) }}"
+                            data-download-url="{{ route('user.inbox.media.download', $message->media_id) }}">
+                        <div class="video-play-icon">
+                            <i class="fas fa-play"></i>
+                        </div>
+                    </div>
+                @endif
                  @if (@$message->message_type == Status::DOCUMENT_TYPE_MESSAGE)
                      <div class="text-dark d-flex justify-content-between flex-column">
                          <a href="{{ route('user.inbox.media.download', $message->media_id) }}"
@@ -218,16 +220,17 @@
                          {{ @$message->media_filename ?? 'Document' }}
                      </div>
                  @endif
-                 @if (@$message->message_type == Status::AUDIO_TYPE_MESSAGE)
-                     <div class="text-dark d-flex justify-content-between flex-column">
-                         <a href="{{ route('user.inbox.media.download', $message->media_id) }}"
-                             class="text--primary download-document">
-                             <img class="message-image audio-image"
-                                 src="{{ asset('assets/images/audio_preview.png') }}" alt="image">
-                         </a>
-                         {{ @$message->media_filename ?? 'Audio' }}
-                     </div>
-                 @endif
+                @if (@$message->message_type == Status::AUDIO_TYPE_MESSAGE)
+                    <div class="audio-message-wrapper">
+                        <audio class="message-audio-player" controls preload="metadata"
+                            src="{{ route('user.inbox.media.view', $message->media_id) }}">
+                        </audio>
+                        <a href="{{ route('user.inbox.media.download', $message->media_id) }}"
+                            class="audio-download-btn" title="@lang('Download')">
+                            <i class="las la-download"></i>
+                        </a>
+                    </div>
+                @endif
              @endif
          @endif
          @auth

@@ -25,8 +25,33 @@ use App\Http\Middleware\HasMetaWhatsapp;
 use App\Http\Middleware\HasSubscription;
 use App\Http\Middleware\IsParentUser;
 use App\Http\Middleware\RedirectIfAuthenticated;
+use App\Http\Middleware\RedirectIfInstalled;
+use App\Http\Middleware\RequireInstallation;
 use App\Http\Middleware\VerifyCsrfToken;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+
+$envFile = __DIR__ . '/../.env';
+
+if (!file_exists($envFile) && is_readable($envExample = __DIR__ . '/../.env.example')) {
+    $freshKey = 'base64:' . base64_encode(random_bytes(32));
+
+    @file_put_contents(
+        $envFile,
+        preg_replace('/^APP_KEY=.*$/m', 'APP_KEY=' . $freshKey, file_get_contents($envExample)),
+        LOCK_EX
+    );
+}
+
+if (!file_exists($envFile)) {
+    // Without this the request dies on "No application encryption key has been specified", which
+    // says nothing about the actual problem: the directory is not writable.
+    http_response_code(500);
+    exit(
+        'Setup cannot continue: ' . realpath(__DIR__ . '/..') . ' is not writable, so the '
+        . 'configuration file could not be created. Set that directory to 755 (or make it '
+        . 'writable by the web server) and reload this page.'
+    );
+}
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -34,6 +59,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         using: function () {
             Route::namespace('App\Http\Controllers')->group(function () {
+                // Registered before web.php, whose trailing {slug} route would otherwise swallow
+                // /install. Deliberately not in the 'web' group: the middleware there reads
+                // settings, languages and templates from the database, none of which exists yet.
+                Route::middleware([
+                    AddQueuedCookiesToResponse::class,
+                    StartSession::class,
+                    ShareErrorsFromSession::class,
+                    VerifyCsrfToken::class,
+                    RedirectIfInstalled::class,
+                ])
+                    ->namespace('Install')
+                    ->group(base_path('routes/install.php'));
+
                 Route::prefix('api')
                     ->middleware(['api', 'maintenance'])
                     ->group(base_path('routes/api.php'));
@@ -58,10 +96,22 @@ return Application::configure(basePath: dirname(__DIR__))
         }
     )
     ->withMiddleware(function (Middleware $middleware) {
+
+        $trustedProxies = env('TRUSTED_PROXIES');
+
+        if ($trustedProxies) {
+            $middleware->trustProxies(
+                at: $trustedProxies === '*' ? '*' : array_map('trim', explode(',', $trustedProxies))
+            );
+        }
+
         $middleware->group('web', [
             AddQueuedCookiesToResponse::class,
             StartSession::class,
             ShareErrorsFromSession::class,
+            // Ahead of everything that reads from the database, so a copy that has not been set
+            // up yet lands on the wizard instead of a connection error.
+            RequireInstallation::class,
             SubstituteBindings::class,
             LanguageMiddleware::class,
             ActiveTemplateMiddleware::class,
@@ -95,15 +145,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (Exception $e, Request $request) {
 
 
-            //for handle custom 
+            //for handle custom
             if (str_starts_with($e->getMessage(), "custom_not_found_exception") || isApiRequest() || isExternalApiRequest()) {
                 $exceptionManager = new ExceptionHandler();
 
-                //handle for custom not found 
+                //handle for custom not found
                 if (str_starts_with($e->getMessage(), "custom_not_found_exception")) {
                     return $exceptionManager->exceptionShowForCustomNotFound($e);
                 }
-    
+
                 //handler for exception
                 if (isApiRequest() || isExternalApiRequest()) {
                     return $exceptionManager->exceptionShowApi($e);

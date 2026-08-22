@@ -9,6 +9,8 @@ use CoinGate\Client;
 use CoinGate\Merchant\Order;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Lib\CurlRequest;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -54,16 +56,40 @@ class ProcessController extends Controller
         return json_encode($send);
     }
 
-    public function ipn()
+    public function ipn(Request $request)
     {
-        $ip = $_SERVER['REMOTE_ADDR'];
-        $url = 'https://api.coingate.com/v2/ips-v4';
-        $response = CurlRequest::curlContent($url);
-        if (strpos($response, $ip) !== false) {
-            $deposit = Deposit::where('trx', $_POST['token'])->orderBy('id', 'DESC')->first();
-            if ($_POST['status'] == 'paid' && $_POST['price_amount'] == $deposit->final_amount && $deposit->status == Status::PAYMENT_INITIATE) {
-                PaymentController::userDataUpdate($deposit);
-            }
+        $validator = Validator::make($request->all(), [
+            'token'        => 'required|string',
+            'status'       => 'required|string',
+            'price_amount' => 'required|numeric',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
         }
+
+        $ip       = $request->ip();
+        $url      = 'https://api.coingate.com/v2/ips-v4';
+        $response = CurlRequest::curlContent($url);
+
+        // The endpoint returns one IP per line. A substring search would let an address that
+        // merely appears inside a listed one (1.2.3.4 within 11.2.3.45) pass, so match exactly.
+        $allowedIps = array_filter(array_map('trim', preg_split('/\R/', (string) $response)));
+
+        if (!in_array($ip, $allowedIps, true)) {
+            return response()->json(['message' => 'Unrecognised caller'], 403);
+        }
+
+        $deposit = Deposit::where('trx', $request->token)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
+        if ($request->status == 'paid' && $request->price_amount == $deposit->final_amount && $deposit->status == Status::PAYMENT_INITIATE) {
+            PaymentController::userDataUpdate($deposit);
+        }
+
+        return response()->json(['message' => 'ok']);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Constants\Status;
 use App\Http\Controllers\Controller;
+use App\Lib\SubscriptionManager;
 use App\Lib\UserNotificationSender;
 use App\Models\Deposit;
 use App\Models\NotificationLog;
@@ -14,6 +15,7 @@ use App\Models\UserLogin;
 use App\Models\Withdrawal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Rules\FileTypeValidate;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -304,11 +306,14 @@ class ManageUsersController extends Controller
         $user->interactive_message = $request->interactive_message ? Status::YES : Status::NO;
         $user->ecommerce_available = $request->ecommerce_available ? Status::YES : Status::NO;
         $user->api_available       = $request->api_available ? Status::YES : Status::NO;
-        $user->telegram_bot_limit  = $request->telegram_bot_limit;
-
+        // The column only exists once TeleWpp has run its migrations, and the form only renders
+        // the field then too, so writing it unconditionally would break the whole form on any
+        // installation without the addon.
         if (addonIsInstalled('tele-wpp') && Schema::hasColumn('users', 'telegram_bot_limit')) {
-            $user->plan_expired_at    = $expirationDate;
+            $user->telegram_bot_limit = $request->telegram_bot_limit;
         }
+
+        $user->plan_expired_at = $expirationDate;
         $user->save();
 
         notify($user, 'SUBSCRIPTION_EXTENDED', [
@@ -340,30 +345,24 @@ class ManageUsersController extends Controller
             return back()->withNotify($notify);
         }
 
-        $now      = $user->plan_expired_at ? Carbon::parse($user->plan_expired_at) : Carbon::now();
-        $expireAt = null;
+        $expireAt = SubscriptionManager::nextExpiry($user, $request->plan_recurring);
 
-        if ($request->plan_recurring == Status::YEARLY) {
-            $expireAt = $now->isPast() ? now()->addYear() : $now->addYear();
-        } else {
-            $expireAt = $now->isPast() ? now()->addMonth() : $now->addMonth();
-        }
+        // The entitlements and the plan_purchases row have to land together: the dashboard, the
+        // API and the invoice all read the purchase row, so a user whose plan was granted
+        // without one is shown "no active subscription" despite having the limits.
+        DB::transaction(function () use ($user, $pricingPlan, $request, $expireAt) {
+            SubscriptionManager::recordPurchase(
+                user: $user,
+                pricingPlan: $pricingPlan,
+                recurringType: $request->plan_recurring,
+                expireAt: $expireAt,
+                amount: 0,
+                paymentMethod: Status::ADMIN_ASSIGNED
+            );
 
-        $user->plan_id              = $pricingPlan->id;
-        $user->account_limit        = $pricingPlan->account_limit    == -1 ? -1 : $user->account_limit    + $pricingPlan->account_limit;
-        $user->agent_limit          = $pricingPlan->agent_limit      == -1 ? -1 : $user->agent_limit      + $pricingPlan->agent_limit;
-        $user->contact_limit        = $pricingPlan->contact_limit    == -1 ? -1 : $user->contact_limit    + $pricingPlan->contact_limit;
-        $user->template_limit       = $pricingPlan->template_limit   == -1 ? -1 : $user->template_limit   + $pricingPlan->template_limit;
-        $user->flow_limit           = $pricingPlan->flow_limit       == -1 ? -1 : $user->flow_limit    + $pricingPlan->flow_limit;
-        $user->campaign_limit       = $pricingPlan->campaign_limit   == -1 ? -1 : $user->campaign_limit   + $pricingPlan->campaign_limit;
-        $user->short_link_limit     = $pricingPlan->short_link_limit == -1 ? -1 : $user->short_link_limit + $pricingPlan->short_link_limit;
-        $user->floater_limit        = $pricingPlan->floater_limit    == -1 ? -1 : $user->floater_limit    + $pricingPlan->floater_limit;
-        $user->welcome_message      = $pricingPlan->welcome_message;
-        $user->ai_assistance        = $pricingPlan->ai_assistance;
-        $user->interactive_message  = $pricingPlan->interactive_message;
-        $user->ecommerce_available  = $pricingPlan->ecommerce_available;
-        $user->plan_expired_at      = $expireAt;
-        $user->save();
+            SubscriptionManager::applyPlan($user, $pricingPlan, $expireAt);
+            $user->save();
+        });
 
         $recurring = $request->plan_recurring == Status::MONTHLY ? 'Monthly' : 'Yearly';
 

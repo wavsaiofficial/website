@@ -1,13 +1,10 @@
 import { useState, useEffect } from "react";
 import NodeWrapper from "./NodeWrapper.jsx";
 import { Position } from "reactflow";
-import axios from "axios";
+import axios, { BASE_URL } from "../http";
 
 export default function SendListMessageNode({ id, data, setNodes }) {
     const handles = [{ type: "target", position: Position.Left }];
-    const BASE_URL = document
-        .querySelector("meta[name=APP-DOMAIN]")
-        .getAttribute("content");
 
     const [lists, setLists] = useState([]);
     const [selectedId, setSelectedId] = useState(data.selectedList?.id || "");

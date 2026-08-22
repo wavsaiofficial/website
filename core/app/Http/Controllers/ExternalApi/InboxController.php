@@ -481,7 +481,8 @@ class InboxController extends Controller
             'template_id'     => 'required',
             'mobile_code'         => 'required',
             'mobile'              => ['required', 'regex:/^([0-9]*)$/'],
-            'from_number'         => ['nullable']
+            'from_number'         => ['nullable'],
+            'button_variables'    => ['nullable', 'array'],
         ]);
 
         if ($validator->fails()) return apiResponse('validation_error', 'error', $validator->errors()->all());

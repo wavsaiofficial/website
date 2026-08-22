@@ -5,6 +5,16 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 
+/**
+ * Authoring tool for admin permissions, run by hand when new permissions are introduced:
+ *
+ *     php artisan db:seed --class=AdminPermissionSeeder
+ *
+ * It is deliberately NOT wired into DatabaseSeeder. It creates permissions without explicit
+ * ids, so on a fresh database it would number them 1..n contiguously, while the shipped
+ * role_has_permissions rows reference the gapped ids that Install\PermissionsSeeder writes.
+ * Running both would hand the Super Admin role the wrong permissions.
+ */
 class AdminPermissionSeeder extends Seeder
 {
     /**

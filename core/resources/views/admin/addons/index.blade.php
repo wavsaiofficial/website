@@ -134,17 +134,17 @@
                         <input type="text" name="purchase_code" class="form-control"
                             placeholder="xxxxxxxx - xxxx - xxxx - xxxx - xxxxxxxxxxxx " value="{{ old('purchase_code') }}"
                             required>
-                        <small class="text-muted">@lang('You received after purchase from Codecanyon.')</small>
+                        <small class="text-muted">@lang('You received after purchase.')</small>
                     </div>
                     <div class="form-group">
-                        <label>@lang('Envato Username')</label>
+                        <label>@lang('Your Username')</label>
                         <input type="text" name="envato_username" class="form-control"
-                            placeholder="@lang('Your Envato Username')" value="{{ old('envato_username') }}" required>
+                            placeholder="@lang('Your Account Username')" value="{{ old('envato_username') }}" required>
                     </div>
                     <div class="form-group">
                         <label>@lang('Addon ZIP File')</label>
                         <input type="file" name="addon_zip" class="form-control" accept=".zip" required>
-                        <small class="text-muted d-block mt-2">@lang('You received a zip file after purchase from Codecanyon.')</small>
+                        <small class="text-muted d-block mt-2">@lang('You received a zip file after purchase.')</small>
                     </div>
                     <div class="form-group">
                         <x-admin.ui.btn.modal />

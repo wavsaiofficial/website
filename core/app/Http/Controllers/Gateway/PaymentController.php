@@ -12,6 +12,7 @@ use App\Models\GatewayCurrency;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
@@ -141,26 +142,63 @@ class PaymentController extends Controller
         return view("Template::$data->view", compact('data', 'pageTitle', 'deposit'));
     }
 
+    /**
+     * Credit a completed deposit to the user's balance.
+     *
+     * The credit runs inside a transaction with row level locks. The deposit is re-read
+     * under lockForUpdate() because the caller loaded its copy before any lock was held,
+     * so its status may already be stale by the time we get here. Without that re-read two
+     * concurrent IPN callbacks for the same trx can both pass the status check and credit
+     * the balance twice.
+     */
     public static function userDataUpdate($deposit, $isManual = null)
     {
-        if ($deposit->status == Status::PAYMENT_INITIATE || $deposit->status == Status::PAYMENT_PENDING) {
-            $deposit->status = Status::PAYMENT_SUCCESS;
-            $deposit->save();
+        $result = DB::transaction(function () use ($deposit, $isManual) {
 
-            $user = User::find($deposit->user_id);
-            $user->balance += $deposit->amount;
+            $lockedDeposit = Deposit::where('id', $deposit->id)->lockForUpdate()->first();
+
+            if (!$lockedDeposit) {
+                return null;
+            }
+
+            // A gateway callback may only complete a deposit that is still awaiting payment.
+            // PAYMENT_PENDING belongs to manual deposits and is released by an admin, which is
+            // the only caller that passes $isManual.
+            $completable = $isManual
+                ? [Status::PAYMENT_INITIATE, Status::PAYMENT_PENDING]
+                : [Status::PAYMENT_INITIATE];
+
+            if (!in_array($lockedDeposit->status, $completable)) {
+                return null;
+            }
+
+            // A credited deposit always leaves exactly one transaction behind, so finding one
+            // means a replayed or concurrent callback already did this work.
+            $alreadyCredited = Transaction::where('trx', $lockedDeposit->trx)
+                ->where('remark', 'deposit')
+                ->exists();
+
+            if ($alreadyCredited) {
+                return null;
+            }
+
+            $lockedDeposit->status = Status::PAYMENT_SUCCESS;
+            $lockedDeposit->save();
+
+            $user = User::where('id', $lockedDeposit->user_id)->lockForUpdate()->first();
+            $user->balance += $lockedDeposit->amount;
             $user->save();
 
-            $methodName = $deposit->methodName();
+            $methodName = $lockedDeposit->methodName();
 
-            $transaction                 = new Transaction();
-            $transaction->user_id       = $deposit->user_id;
-            $transaction->amount        = $deposit->amount;
+            $transaction                = new Transaction();
+            $transaction->user_id       = $lockedDeposit->user_id;
+            $transaction->amount        = $lockedDeposit->amount;
             $transaction->post_balance  = $user->balance;
-            $transaction->charge        = $deposit->charge;
+            $transaction->charge        = $lockedDeposit->charge;
             $transaction->trx_type      = '+';
             $transaction->details       = 'Deposit Via ' . $methodName;
-            $transaction->trx           = $deposit->trx;
+            $transaction->trx           = $lockedDeposit->trx;
             $transaction->remark        = 'deposit';
             $transaction->save();
 
@@ -172,22 +210,45 @@ class PaymentController extends Controller
                 $adminNotification->save();
             }
 
-            if ($deposit->plan_id) {
-                $plan = @$deposit->pricingPlan;
-                PurchasePlanController::updateUserSubscription($user, $plan, $deposit->plan_recurring_type, Status::GATEWAY_PAYMENT, $deposit->method_code, $deposit->coupon);
-            } else {
-                notify($user, $isManual ? 'DEPOSIT_APPROVE' : 'DEPOSIT_COMPLETE', [
-                    'method_name'     => $methodName,
-                    'method_currency' => $deposit->method_currency,
-                    'method_amount'   => showAmount($deposit->final_amount, currencyFormat: false),
-                    'amount'          => showAmount($deposit->amount, currencyFormat: false),
-                    'charge'          => showAmount($deposit->charge, currencyFormat: false),
-                    'rate'            => showAmount($deposit->rate, currencyFormat: false),
-                    'trx'             => $deposit->trx,
-                    'post_balance'    => showAmount($user->balance)
-                ]);
+            // The plan purchase debits the same balance row it was just credited on, so it has
+            // to settle inside this transaction rather than after it.
+            if ($lockedDeposit->plan_id) {
+                $plan = @$lockedDeposit->pricingPlan;
+                PurchasePlanController::updateUserSubscription($user, $plan, $lockedDeposit->plan_recurring_type, Status::GATEWAY_PAYMENT, $lockedDeposit->method_code, $lockedDeposit->coupon);
             }
+
+            return [
+                'user'       => $user,
+                'deposit'    => $lockedDeposit,
+                'methodName' => $methodName,
+                'isPlan'     => (bool) $lockedDeposit->plan_id,
+            ];
+        });
+
+        if (!$result) {
+            return;
         }
+
+        // Keep the caller's instance in step with what was committed.
+        $deposit->status = Status::PAYMENT_SUCCESS;
+
+        if ($result['isPlan']) {
+            return;
+        }
+
+        $user          = $result['user'];
+        $lockedDeposit = $result['deposit'];
+
+        notify($user, $isManual ? 'DEPOSIT_APPROVE' : 'DEPOSIT_COMPLETE', [
+            'method_name'     => $result['methodName'],
+            'method_currency' => $lockedDeposit->method_currency,
+            'method_amount'   => showAmount($lockedDeposit->final_amount, currencyFormat: false),
+            'amount'          => showAmount($lockedDeposit->amount, currencyFormat: false),
+            'charge'          => showAmount($lockedDeposit->charge, currencyFormat: false),
+            'rate'            => showAmount($lockedDeposit->rate, currencyFormat: false),
+            'trx'             => $lockedDeposit->trx,
+            'post_balance'    => showAmount($user->balance)
+        ]);
     }
 
     public function manualDepositConfirm()

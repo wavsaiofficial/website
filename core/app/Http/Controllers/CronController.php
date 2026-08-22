@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Constants\Status;
 use App\Http\Controllers\User\PurchasePlanController;
 use App\Lib\CurlRequest;
+use App\Lib\WhatsApp\WhatsAppLib;
 use App\Models\Campaign;
 use App\Models\CampaignContact;
 use App\Models\Conversation;
@@ -217,100 +218,15 @@ class CronController extends Controller
                     $conversation->save();
                 }
 
-                $components = [];
-
-                if (count($template->cards) == 0) {
-                    if (is_array($headerParams) && count($headerParams)) {
-                        $components[] = [
-                            'type' => 'header',
-                            'parameters' => $headerParams
-                        ];
-                    } elseif ($template->header_format === 'IMAGE' && !empty($template->header_media)) {
-                        $components[] = [
-                            'type' => 'header',
-                            'parameters' => [
-                                [
-                                    'type' => 'image',
-                                    'image' => [
-                                        'link' => url(getFilePath('templateHeader') . '/' . $template->header_media)
-                                    ]
-                                ]
-                            ]
-                        ];
-                    }
-                }
-
-                if (is_array($bodyParams) && count($bodyParams)) {
-                    $components[] = [
-                        'type' => 'body',
-                        'parameters' => $bodyParams
-                    ];
-                } else {
-                    $components[] = [
-                        'type' => 'body',
-                        'parameters' => []
-                    ];
-                }
+                $components = (new WhatsAppLib())->buildTemplateComponents(
+                    $template,
+                    $headerParams,
+                    $bodyParams,
+                    parseTemplateParams($campaign->template_button_params ?? [], $contactOriginal)
+                );
 
                 if (empty($components)) {
                     continue;
-                }
-
-                if (!empty($template->cards) && count($template->cards) > 0) {
-                    $cards = [];
-
-                    foreach ($template->cards as $index => $card) {
-                        $cardData = [];
-                        $cardData['card_index'] = $index;
-                        $cardData['components'] = [];
-                        $cardData['components'] = [];
-                        if ($card->header_format == 'IMAGE') {
-                            $cardData['components'][] = [
-                                'type' => 'header',
-                                'parameters' => [
-                                    [
-                                        'type' => 'image',
-                                        'image' => [
-                                            'id' => $card->media_id
-                                        ]
-                                    ]
-                                ]
-                            ];
-                        } elseif ($card->header_format == 'VIDEO') {
-                            $cardData['components'][] = [
-                                'type' => 'header',
-                                'parameters' => [
-                                    [
-                                        'type' => 'video',
-                                        'video' => [
-                                            'id' => $card->media_id
-                                        ]
-                                    ]
-                                ]
-                            ];
-                        }
-
-                        if ($card->buttons && count($card->buttons) > 0) {
-                            $cardButtons = [];
-                            foreach ($card->buttons['buttons'] as $button) {
-                                if ($button['type'] == 'URL') {
-                                    $cardButtons[] = [
-                                        'type' => 'button',
-                                        'sub_type' => strtolower($button['type']),
-                                        'index' => $index
-                                    ];
-                                }
-                            }
-                            $cardData['components'] = array_merge($cardData['components'], $cardButtons);
-                        }
-                        $cards[] = $cardData;
-                    }
-
-                    $secondParams = [
-                        'type'  => 'carousel',
-                        'cards' => $cards
-                    ];
-                    $components[] = $secondParams;
                 }
 
                 $data = [
@@ -442,7 +358,7 @@ class CronController extends Controller
     {
         $installedAddons = InstalledAddon::query()->installed()->get();
 
-        $url = 'https://ovosolution.com/verify-purchase/addon_server/api/addon/check-updates';
+        $url = 'https://license.ovosolution.com/api/addon/check-updates';
 
         $installedAddons->each(function ($addon) use ($url) {
 
@@ -454,6 +370,7 @@ class CronController extends Controller
 
             $response    = Http::post($url, $payload);
             $data        = $response->json();
+
             $nextVersion = $data['data']['need_to_update'] ?? null;
 
             if ($data['status'] == 'success' && !empty($data['data']['available_update']) && $nextVersion && version_compare($nextVersion, $addon->version, '>')) {

@@ -63,7 +63,12 @@ class ProcessController extends Controller
         // You can find your endpoint's secret in your webhook settings
         $endpoint_secret = $gateway_parameter->end_point; // main
         $payload = @file_get_contents('php://input');
-        $sig_header = $_SERVER['HTTP_STRIPE_SIGNATURE'];
+        $sig_header = request()->header('stripe-signature');
+
+        if (!$sig_header) {
+            http_response_code(400);
+            exit();
+        }
 
 
         $event = null;
@@ -88,7 +93,7 @@ class ProcessController extends Controller
             $session = $event->data->object;
             $deposit = Deposit::where('btc_wallet',  $session->id)->orderBy('id', 'DESC')->first();
 
-            if ($deposit->status == Status::PAYMENT_INITIATE) {
+            if ($deposit && $deposit->status == Status::PAYMENT_INITIATE) {
                 PaymentController::userDataUpdate($deposit);
             }
         }

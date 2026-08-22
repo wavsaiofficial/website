@@ -30,7 +30,7 @@ class UserController extends Controller
         $user         = auth()->user();
         $parentUser   = getParentUser();
         $notify[] = 'User Dashboard';
-        
+
         $campaigns                     = Campaign::where('user_id', $parentUser->id);
         $widget['active_campaign']     = (clone $campaigns)->where('status', Status::CAMPAIGN_RUNNING)->count();
         $widget['completed_campaign']  = (clone $campaigns)->where('status', Status::CAMPAIGN_COMPLETED)->count();
@@ -69,11 +69,11 @@ class UserController extends Controller
 
         $widget['subscription']   = $parentUser->purchases()->where('plan_id', $parentUser->plan_id)->with('plan')->first();
         $widget['wallet_balance'] = $parentUser->balance;
-        
+
         if ($user->is_agent) {
             $widget['permissions'] = $user->agentPermissions()->pluck('name')->toArray();
         }
-        
+
         return apiResponse("dashboard", "success", $notify, [
             'user'        => $user,
             'widget'      => $widget,
@@ -303,10 +303,12 @@ class UserController extends Controller
             return apiResponse("validation_error", "error", $validator->errors()->all());
         }
 
-        $deviceToken = DeviceToken::where('token', $request->token)->first();
+        $deviceToken = DeviceToken::where('token', $request->token)
+            ->where('user_id', auth()->user()->id)
+            ->first();
 
         if ($deviceToken) {
-            $notify[] = 'Token already exists';
+            $notify[] = 'Token already exists for this user';
             return apiResponse("token_exists", "error", $notify);
         }
 

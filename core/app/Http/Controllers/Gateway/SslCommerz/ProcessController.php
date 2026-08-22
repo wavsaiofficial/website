@@ -7,6 +7,7 @@ use App\Http\Controllers\Gateway\PaymentController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Lib\CurlRequest;
+use Illuminate\Support\Facades\Validator;
 class ProcessController extends Controller{
 
     public static function process($deposit){
@@ -52,41 +53,60 @@ class ProcessController extends Controller{
     }
 
     public function ipn(Request $request){
-        $track = $request->tran_id;
-        $status = $request->status;
-        $deposit = Deposit::where('trx', $track)->orderBy('id', 'DESC')->first();
-        if ($status == 'VALID' && @$deposit->status == Status::PAYMENT_INITIATE) {
-            if (isset($_POST) && isset($_POST['verify_sign']) && isset($_POST['verify_key'])) {
-                $preDefineKey = explode(',', $_POST['verify_key']);
-                $newData = array();
-                if (!empty($preDefineKey)) {
-                    foreach ($preDefineKey as $value) {
-                        if (isset($_POST[$value])) {
-                            $newData[$value] = ($_POST[$value]);
-                        }
-                    }
-                }
-                $parameters = json_decode($deposit->gatewayCurrency()->gateway_parameter);
+        $validator = Validator::make($request->all(), [
+            'tran_id' => 'required|string',
+            'val_id'  => 'required|string',
+            'status'  => 'required|string',
+        ]);
 
-                $newData['store_passwd'] = md5($parameters->store_password);
+        $notify[] = ['error', 'Invalid request'];
 
-                ksort($newData);
-                $hashString = "";
-                foreach ($newData as $key => $value) {$hashString .= $key . '=' . ($value) . '&';}
-                $hashString = rtrim($hashString, '&');
-                if (md5($hashString) == $_POST['verify_sign']) {
-                    $input  = $request->except('method');
-                    $ssltxt = "";
-                    foreach ($input as $key => $value) {
-                        $ssltxt .= "$key : $value <br>";
-                    }
-                    PaymentController::userDataUpdate($deposit);
-                    $notify[] = ['success', 'Payment captured successfully'];
-                    return redirect($deposit->success_url)->withNotify($notify);
-                }
-            }
+        if ($validator->fails()) {
+            return to_route('user.deposit.index')->withNotify($notify);
         }
-        $notify[] = ['error','Invalid request'];
-        return redirect($deposit->failed_url)->withNotify($notify);
+
+        $deposit = Deposit::where('trx', $request->tran_id)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return to_route('user.deposit.index')->withNotify($notify);
+        }
+
+        if ($request->status != 'VALID' || $deposit->status != Status::PAYMENT_INITIATE) {
+            return redirect($deposit->failed_url)->withNotify($notify);
+        }
+
+        $parameters = json_decode($deposit->gatewayCurrency()->gateway_parameter);
+
+        // The previously used verify_sign hash cannot be trusted: verify_key names the fields
+        // that go into the hash and arrives in the callback itself, so the caller decides what
+        // the signature covers and can leave out the amount and tran_id entirely. SSLCommerz's
+        // validation API is authoritative instead, since the answer comes from SSLCommerz over
+        // a server-to-server request keyed by val_id rather than from the callback body.
+        $validationUrl = 'https://securepay.sslcommerz.com/validator/api/validationserverAPI.php?' . http_build_query([
+            'val_id'      => $request->val_id,
+            'store_id'    => $parameters->store_id,
+            'store_passwd'=> $parameters->store_password,
+            'format'      => 'json',
+        ]);
+
+        $validation = json_decode(CurlRequest::curlContent($validationUrl));
+
+        if (!$validation || !isset($validation->status)) {
+            return redirect($deposit->failed_url)->withNotify($notify);
+        }
+
+        $paymentSettled  = in_array($validation->status, ['VALID', 'VALIDATED']);
+        $matchesDeposit  = isset($validation->tran_id) && hash_equals((string) $deposit->trx, (string) $validation->tran_id);
+        $currencyMatches = isset($validation->currency) && $validation->currency == $deposit->method_currency;
+        $amountCovered   = isset($validation->amount) && (float) $validation->amount >= round($deposit->final_amount, 2);
+
+        if (!$paymentSettled || !$matchesDeposit || !$currencyMatches || !$amountCovered) {
+            return redirect($deposit->failed_url)->withNotify($notify);
+        }
+
+        PaymentController::userDataUpdate($deposit);
+
+        $notify = [['success', 'Payment captured successfully']];
+        return redirect($deposit->success_url)->withNotify($notify);
     }
 }

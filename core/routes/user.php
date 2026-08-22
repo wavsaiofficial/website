@@ -73,6 +73,7 @@ Route::middleware('auth')->name('user.')->group(function () {
                 Route::get('transactions', 'transactions')->name('transactions')->middleware('parent.user');
 
                 Route::post('add-device-token', 'addDeviceToken')->name('add.device.token');
+                Route::post('delete-device-token', 'deleteDeviceToken')->name('delete.device.token');
 
                 Route::get('notification/settings', 'notificationSetting')->name('notification.setting');
                 Route::post('notification/settings', 'notificationSettingsUpdate')->name('notification.setting');

@@ -7,6 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <title> {{ gs()->siteName(__($pageTitle)) }}</title>
 
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="P-A-ID" content="{{ config('app.PUSHER_APP_KEY') }}">
     <meta name="P-CLUSTER" content="{{ config('app.PUSHER_APP_CLUSTER') }}">
     <meta name="APP-DOMAIN" content="{{ route('home') }}">

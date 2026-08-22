@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Lib\CurlRequest;
 use App\Models\Deposit;
+use Illuminate\Http\Request;
 
 class ProcessController extends Controller
 {
@@ -44,28 +45,41 @@ class ProcessController extends Controller
         return json_encode($send);
     }
 
-    public function ipn()
+    public function ipn(Request $request)
     {
-        if (isset($_SERVER['HTTP_X_NOWPAYMENTS_SIG']) && !empty($_SERVER['HTTP_X_NOWPAYMENTS_SIG'])) {
-            $recivedHmac = $_SERVER['HTTP_X_NOWPAYMENTS_SIG'];
-            $requestJson = file_get_contents('php://input');
-            $requestData = json_decode($requestJson, true);
-            $deposit = Deposit::where('status', Status::NO)->where('trx', $requestData['order_id'])->first();
-            if ($deposit) {
-                ksort($requestData);
-                $sorted_requestJson = json_encode($requestData, JSON_UNESCAPED_SLASHES);
-                if ($requestJson !== false && !empty($requestJson)) {
-                    $gatewayAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
-                    $hmac       = hash_hmac("sha512", $sorted_requestJson, trim($gatewayAcc->secret_key));
-                    if ($hmac == $recivedHmac) {
-                        if ($requestData['payment_status'] == 'confirmed' || $requestData['payment_status'] == 'finished') {
-                            if ($requestData['actually_paid'] == $requestData['pay_amount']) {
-                                PaymentController::userDataUpdate($deposit);
-                            }
-                        }
-                    }
-                }
-            }
+        $recivedHmac = $request->header('x-nowpayments-sig');
+
+        if (!$recivedHmac) {
+            return response()->json(['message' => 'Missing signature'], 400);
         }
+
+        $requestJson = file_get_contents('php://input');
+        $requestData = json_decode($requestJson, true);
+
+        if (!is_array($requestData) || !isset($requestData['order_id'], $requestData['payment_status'], $requestData['actually_paid'], $requestData['pay_amount'])) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
+        $deposit = Deposit::where('status', Status::NO)->where('trx', $requestData['order_id'])->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
+        ksort($requestData);
+        $sorted_requestJson = json_encode($requestData, JSON_UNESCAPED_SLASHES);
+
+        $gatewayAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
+        $hmac       = hash_hmac("sha512", $sorted_requestJson, trim($gatewayAcc->secret_key));
+
+        if (!hash_equals($hmac, (string) $recivedHmac)) {
+            return response()->json(['message' => 'Invalid signature'], 400);
+        }
+
+        if (in_array($requestData['payment_status'], ['confirmed', 'finished']) && $requestData['actually_paid'] == $requestData['pay_amount']) {
+            PaymentController::userDataUpdate($deposit);
+        }
+
+        return response()->json(['message' => 'ok']);
     }
 }

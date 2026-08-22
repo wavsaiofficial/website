@@ -38,6 +38,10 @@ class ProcessController extends Controller
 
         $deposit = Deposit::where('trx', $track)->orderBy('id', 'DESC')->first();
 
+        if (!$deposit) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Invalid request']]);
+        }
+
         if ($type == 'error') {
             $message = 'Transaction failed, Ref: ' . $track;
             $notify[] = ['error', $message];

@@ -7,6 +7,7 @@ use App\Models\Deposit;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Gateway\PaymentController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use Razorpay\Api\Api;
 
 
@@ -74,18 +75,29 @@ class ProcessController extends Controller
     public function ipn(Request $request)
     {
 
+        $validator = Validator::make($request->all(), [
+            'razorpay_order_id'   => 'required|string',
+            'razorpay_payment_id' => 'required|string',
+            'razorpay_signature'  => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return back()->withNotify([['error', 'Invalid request']]);
+        }
+
         $deposit = Deposit::where('btc_wallet', $request->razorpay_order_id)->orderBy('id', 'DESC')->first();
-        $razorAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
 
         if (!$deposit) {
-            $notify[] = ['error', 'Invalid request'];
+            return back()->withNotify([['error', 'Invalid request']]);
         }
+
+        $razorAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
 
         $sig = hash_hmac('sha256', $request->razorpay_order_id . "|" . $request->razorpay_payment_id, $razorAcc->key_secret);
         $deposit->detail = $request->all();
         $deposit->save();
 
-        if ($sig == $request->razorpay_signature && $deposit->status == Status::PAYMENT_INITIATE) {
+        if (hash_equals($sig, (string) $request->razorpay_signature) && $deposit->status == Status::PAYMENT_INITIATE) {
             PaymentController::userDataUpdate($deposit);
             $notify[] = ['success', 'Transaction was successful'];
             return redirect($deposit->success_url)->withNotify($notify);

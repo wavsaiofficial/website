@@ -8,7 +8,6 @@ use App\Models\InstalledAddon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\PermissionRegistrar;
@@ -66,10 +65,16 @@ class AddonController extends Controller
                 return apiResponse('error', 'error', [$verification['message']]);
             }
 
-            ///Read addon.json from ZIP without extracting 
+            ///Read addon.json from ZIP without extracting
             $destinationAfterExtractZip = $this->extractZip($zipPath, $meta['name']);
 
-            //need upload database
+            @unlink($zipPath);
+
+            // Schema first. Code all over the application gates itself on addonIsInstalled(), so
+            // the installed_addons row must not appear until the columns and tables that code
+            // expects actually exist.
+            $this->runAddonMigrations($meta['name']);
+
             $newAddon                  = new InstalledAddon();
             $newAddon->name            = $meta['name'];
             $newAddon->title           = $meta['title'];
@@ -82,29 +87,86 @@ class AddonController extends Controller
             $newAddon->envato_username = $envatoUsername;
             $newAddon->save();
 
-
             // Clear caches
             Cache::forget('installed_addons_active');
-            @unlink($zipPath);
-
-            //need upload addon database
-            $databaseFile = $destinationAfterExtractZip . '/Source/database/database.sql';
-
-            sleep(2);
-
-            if (file_exists($databaseFile)) {
-                $databaseStatement = file_get_contents($databaseFile);
-                DB::unprepared($databaseStatement);
-            }
 
             app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             return apiResponse('success', "success", ["Addon installed successfully!"]);
         } catch (\Exception $e) {
             @unlink($zipPath);
+
+            // Undo any schema the addon managed to apply before it failed, so a retry starts clean.
+            if (isset($meta['name'])) {
+                $this->rollbackAddonMigrations($meta['name']);
+            }
+
+            // The row is written last, but a failure after that point would otherwise leave the
+            // addon advertised as installed on top of schema that has just been rolled back.
+            if (isset($newAddon) && $newAddon->exists) {
+                $newAddon->delete();
+                Cache::forget('installed_addons_active');
+            }
+
             $message = $e->getMessage() ?? 'An error occurred during installation. Please try again.';
             return apiResponse('Installation failed', "error", ['Installation failed: ' . $message]);
         }
+    }
+
+    /**
+     * Apply an addon's schema changes.
+     *
+     * Addons ship versioned Laravel migrations rather than a raw SQL dump. Executing a .sql file
+     * that arrived inside an uploaded archive would hand arbitrary statements straight to the
+     * database, so schema changes go through the migrator instead, which also gives each addon
+     * a working rollback.
+     */
+    private function runAddonMigrations(string $addonName): void
+    {
+        $migrationPath = $this->addonMigrationPath($addonName);
+
+        if (!$migrationPath) {
+            return;
+        }
+
+        $exitCode = Artisan::call('migrate', [
+            '--path'     => $migrationPath,
+            '--realpath' => true,
+            '--force'    => true,
+        ]);
+
+        if ($exitCode !== 0) {
+            throw new \RuntimeException('The addon database migration failed: ' . trim(Artisan::output()));
+        }
+    }
+
+    /**
+     * Reverse an addon's migrations. Used when an install fails part way through.
+     */
+    private function rollbackAddonMigrations(string $addonName): void
+    {
+        $migrationPath = $this->addonMigrationPath($addonName);
+
+        if (!$migrationPath) {
+            return;
+        }
+
+        try {
+            Artisan::call('migrate:rollback', [
+                '--path'     => $migrationPath,
+                '--realpath' => true,
+                '--force'    => true,
+            ]);
+        } catch (\Throwable $e) {
+            // A failed rollback must not mask the original installation error.
+        }
+    }
+
+    private function addonMigrationPath(string $addonName): ?string
+    {
+        $path = base_path('addons/' . $addonName . '/Source/database/migrations');
+
+        return is_dir($path) ? $path : null;
     }
 
     public function versionUpload(Request $request)
@@ -152,12 +214,7 @@ class AddonController extends Controller
 
             $this->mergeAddonUpdate($request->file('update_zip')->getRealPath(), $addon->name);
 
-            $databaseFile = base_path('addons/' . $addon->name . '/Source/database/database.sql');
-
-            if (file_exists($databaseFile)) {
-                $databaseStatement = file_get_contents($databaseFile);
-                DB::unprepared($databaseStatement);
-            }
+            $this->runAddonMigrations($addon->name);
 
             $addon->version          = $meta['version'];
             $addon->update_available = null;
@@ -179,9 +236,9 @@ class AddonController extends Controller
 
     private function verifyAddonPurchase(string $purchaseCode, string $envatoUsername, string $slug, $update = false): ?array
     {
-        $url = 'https://ovosolution.com/verify-purchase/addon_server/addon-verify';
+        $url = 'https://license.ovosolution.com/addon-verify';
         if($update){
-            $url = 'https://ovosolution.com/verify-purchase/addon_server/addon-update-verify';
+            $url = 'https://license.ovosolution.com/addon-update-verify';
         }
         $response = Http::post(
             $url,

@@ -30,9 +30,9 @@ use Illuminate\Support\Facades\Storage;
 function systemDetails()
 {
     $system['name']                = 'ovowpp';
-    $system['web_version']         = '2.3';
-    $system['admin_panel_version'] = '1.0.1';
-    $system['mobile_app_version']  = '2.3';
+    $system['web_version']         = '2.4';
+    $system['admin_panel_version'] = '1.0.2';
+    $system['mobile_app_version']  = '2.4';
     $system['android_version']     = '1.0';
     $system['ios_version']         = '1.0';
     $system['flutter_version']     = '1.0';
@@ -238,7 +238,7 @@ function getImage($image, $size = null, $isAvatar = false)
 }
 
 
-function notify($user, $templateName, $shortCodes = null, $sendVia = null, $createLog = true, $pushImage = null)
+function notify($user, $templateName, $shortCodes = null, $sendVia = null, $createLog = true, $pushImage = null, $redirectUrl = null)
 {
     $globalShortCodes = [
         'site_name' => gs('site_name'),
@@ -285,6 +285,7 @@ function notify($user, $templateName, $shortCodes = null, $sendVia = null, $crea
     $notify->user         = $user;
     $notify->createLog    = $createLog;
     $notify->pushImage    = $pushImage;
+    $notify->redirectUrl  = $redirectUrl;
     $notify->userColumn   = isset($user->id) ? $user->getForeignKey() : 'user_id';
     $notify->send();
 }
@@ -470,6 +471,17 @@ function urlPath($routeName, $routeParam = null)
 }
 
 
+function shortLinkBaseUrl()
+{
+    // the route has a required {code}, so build it with a placeholder and strip it
+    // off again, keeping the route definition as the single source of truth
+    $placeholder = 'SHORT_LINK_CODE_PLACEHOLDER';
+    $url         = route('short.link.redirect', ['code' => $placeholder]);
+
+    return rtrim(explode($placeholder, $url)[0], '/');
+}
+
+
 function showMobileNumber($number)
 {
     $length = strlen($number);
@@ -483,28 +495,21 @@ function showEmailAddress($email)
 }
 
 
+/**
+ * Resolve the client IP address.
+ *
+ * This used to read X-Forwarded-For, Client-IP, X-Real-IP and friends straight out of $_SERVER
+ * and let any of them override REMOTE_ADDR, which meant a client could pick the address that got
+ * recorded simply by sending a header. Laravel's own resolution is used instead: it honours
+ * those headers only for requests that arrived from a proxy listed via trustProxies() in
+ * bootstrap/app.php, and falls back to REMOTE_ADDR otherwise.
+ *
+ * Sites behind Cloudflare or a load balancer should set TRUSTED_PROXIES in .env.
+ */
 function getRealIP()
 {
-    $ip = $_SERVER["REMOTE_ADDR"];
-    //Deep detect ip
-    if (filter_var(@$_SERVER['HTTP_FORWARDED'], FILTER_VALIDATE_IP)) {
-        $ip = $_SERVER['HTTP_FORWARDED'];
-    }
-    if (filter_var(@$_SERVER['HTTP_FORWARDED_FOR'], FILTER_VALIDATE_IP)) {
-        $ip = $_SERVER['HTTP_FORWARDED_FOR'];
-    }
-    if (filter_var(@$_SERVER['HTTP_X_FORWARDED_FOR'], FILTER_VALIDATE_IP)) {
-        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-    }
-    if (filter_var(@$_SERVER['HTTP_CLIENT_IP'], FILTER_VALIDATE_IP)) {
-        $ip = $_SERVER['HTTP_CLIENT_IP'];
-    }
-    if (filter_var(@$_SERVER['HTTP_X_REAL_IP'], FILTER_VALIDATE_IP)) {
-        $ip = $_SERVER['HTTP_X_REAL_IP'];
-    }
-    if (filter_var(@$_SERVER['HTTP_CF_CONNECTING_IP'], FILTER_VALIDATE_IP)) {
-        $ip = $_SERVER['HTTP_CF_CONNECTING_IP'];
-    }
+    $ip = request()->ip();
+
     if ($ip == '::1') {
         $ip = '127.0.0.1';
     }
@@ -795,14 +800,15 @@ function parseTemplateParams(array $params, $contact)
 {
     $updatedParams = [];
 
-    foreach ($params as $param) {
+    // keys are preserved because button parameters are keyed by their button index
+    foreach ($params as $key => $param) {
         $text = $param['text'] ?? '';
 
         if (preg_match('/\{\{.*\}\}/', $text)) {
             $text = setCodeValue($text, $contact);
         }
 
-        $updatedParams[] = [
+        $updatedParams[$key] = [
             'type' => 'text',
             'text' => $text,
         ];

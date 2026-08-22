@@ -71,10 +71,17 @@ class Notify
     *
     * @var string|null
     */
-	public $pushImage;
+public $pushImage;
 
     /**
-    * Assign value to sendVia and setting property
+     * Redirect URL for push notification
+     *
+     * @var string|null
+     */
+    public $redirectUrl;
+
+    /**
+     * Assign value to sendVia and setting property
     *
     * @param null $sendVia
     * @return void
@@ -112,6 +119,9 @@ class Notify
 			$notify->createLog = $this->createLog;
 			$notify->userColumn = $this->userColumn;
 			$notify->pushImage = $this->pushImage;
+			if ($method === Push::class && $this->redirectUrl) {
+			    $notify->redirectUrl = $this->redirectUrl;
+			}
 			$notify->send();
 		}
 	}

@@ -618,8 +618,9 @@ trait InboxManager
     public function sendTemplateMessage(Request $request)
     {
         $request->validate([
-            'conversation_id' => 'required',
-            'template_id'     => 'required',
+            'conversation_id'  => 'required',
+            'template_id'      => 'required',
+            'button_variables' => 'nullable|array',
         ]);
 
         $user = getParentUser();
@@ -817,7 +818,7 @@ trait InboxManager
         }
 
         try {
-            if ($message->message_type == Status::IMAGE_TYPE_MESSAGE && $message->media_path) {
+            if (in_array($message->message_type, [Status::IMAGE_TYPE_MESSAGE, Status::VIDEO_TYPE_MESSAGE, Status::AUDIO_TYPE_MESSAGE]) && $message->media_path) {
                 if (s3_configured()) {
                     $fileContent = s3_disk()->get('conversation/' . $message->media_path);
                 } else {

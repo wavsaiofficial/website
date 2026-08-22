@@ -7,6 +7,8 @@ use App\Models\Deposit;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Http\Controllers\Controller;
 use App\Lib\CurlRequest;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -34,7 +36,7 @@ class ProcessController extends Controller
         return json_encode($send);
     }
 
-    public function ipn()
+    public function ipn(Request $request)
     {
         $raw_post_data = file_get_contents('php://input');
         $raw_post_array = explode('&', $raw_post_data);
@@ -57,14 +59,32 @@ class ProcessController extends Controller
         $url = $paypalURL . $req;
         $response = CurlRequest::curlContent($url);
 
-        if ($response == "VERIFIED") {
-            $deposit = Deposit::where('trx', $_POST['custom'])->orderBy('id', 'DESC')->first();
-            $deposit->detail = $details;
-            $deposit->save();
-
-            if ($_POST['mc_gross'] == round($deposit->final_amount,2) && $deposit->status == Status::PAYMENT_INITIATE) {
-                PaymentController::userDataUpdate($deposit);
-            }
+        if ($response != "VERIFIED") {
+            return response()->json(['message' => 'Unverified IPN'], 400);
         }
+
+        $validator = Validator::make($request->all(), [
+            'custom'   => 'required|string',
+            'mc_gross' => 'required|numeric',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Invalid IPN payload'], 400);
+        }
+
+        $deposit = Deposit::where('trx', $request->custom)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return response()->json(['message' => 'Deposit not found'], 404);
+        }
+
+        $deposit->detail = $details;
+        $deposit->save();
+
+        if ($request->mc_gross == round($deposit->final_amount, 2) && $deposit->status == Status::PAYMENT_INITIATE) {
+            PaymentController::userDataUpdate($deposit);
+        }
+
+        return response()->json(['message' => 'ok']);
     }
 }

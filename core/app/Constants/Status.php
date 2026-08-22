@@ -54,6 +54,7 @@ class Status
 
     const WALLET_PAYMENT  = 1;
     const GATEWAY_PAYMENT = 2;
+    const ADMIN_ASSIGNED  = 3;
 
     const INVOICE_PAID   = 1;
     const INVOICE_UNPAID = 0;

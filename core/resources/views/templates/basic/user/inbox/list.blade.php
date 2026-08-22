@@ -58,6 +58,7 @@
                                                     data-template-body="{{ $template->body }}"
                                                     data-template-footer="{{ $template->footer }}"
                                                     data-header-format="{{ $template->header_format }}"
+                                                    data-category="{{ strtoupper($template->category?->name ?? '') }}"
                                                     data-buttons="{{ json_encode($template->buttons) }}"
                                                     data-header-media="{{ asset(getFilePath('templateHeader')) . '/' . $template->header_media }}">
                                                     {{ __($template->name) }}</option>
@@ -86,6 +87,21 @@
                                         </div>
                                     </div>
                                     <div id="template-body-variables"></div>
+                                </div>
+                                <div class="col-12 button-variable-area d-none">
+                                    <div class="row justify-content-center">
+                                        <div class="col-12">
+                                            <div class="auth-devider text-center">
+                                                <span> @lang('BUTTON VARIABLES')</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="template-button-variables"></div>
+                                </div>
+                                <div class="col-12 d-none otp-template-note">
+                                    <p class="text--small text-muted">
+                                        @lang('The verification code you enter above is also sent to the template button, as WhatsApp requires both values to match.')
+                                    </p>
                                 </div>
                                 <div class="col-12 d-none variable-code-wrapper">
                                     @foreach (variableShortCodes() as $key => $value)
@@ -803,12 +819,12 @@
                 });
             };
 
-            // TODO:: Uncomment this. 
-            // @if (request('channel') && request('channel') == Status::CHANNEL_TELEGRAM && $teleGramInstalled)
-            //     pusherConnection('receive-message', `telegram-${window.telegram_bot_id}`);
-            // @else
-            //     pusherConnection('receive-message', "{{ $whatsappAccount->id }}");
-            // @endif
+            // TODO:: Uncomment this.
+            @if (request('channel') && request('channel') == Status::CHANNEL_TELEGRAM && $teleGramInstalled)
+                pusherConnection('receive-message', `telegram-${window.telegram_bot_id}`);
+            @else
+                pusherConnection('receive-message', "{{ $whatsappAccount->id }}");
+            @endif
 
             $('.chat-media__btn, .chat-media__list').on('click', function() {
                 $('.chat-media__list').toggleClass('show');
@@ -1146,13 +1162,33 @@
                             </button>`
             }
 
+            function templateButtonVariables(buttons) {
+                // only buttons that need a value at send time get an input; the index is
+                // the button position in the template, which is what the API expects
+                return (Array.isArray(buttons) ? buttons : []).map(function(button, index) {
+                    return {
+                        index: index,
+                        button: button
+                    };
+                }).filter(function(item) {
+                    const type = (item.button?.type ?? '').toUpperCase();
+                    if (type === 'URL') return /\{\{\s*\d+\s*\}\}/.test(item.button?.url ?? '');
+                    return type === 'COPY_CODE';
+                });
+            }
+
             function generateParamsField() {
                 let templateBody = $(this).find(':selected').data('template-body');
                 let templateHeader = $(this).find(':selected').data('template-header');
                 let templateHeaderText = templateHeader?.text ?? null;
+                let templateCategory = ($(this).find(':selected').data('category') ?? '').toString().toUpperCase();
 
                 let totalBodyMatches = templateBody ? templateBody.match(/\{\{\d+\}\}/g) : [];
                 let totalHeaderMatches = templateHeaderText ? templateHeaderText.match(/\{\{\d+\}\}/g) : [];
+                let buttonVariables = templateCategory === 'AUTHENTICATION' ? [] :
+                    templateButtonVariables($(this).find(':selected').data('buttons'));
+
+                $('.otp-template-note').toggleClass('d-none', templateCategory !== 'AUTHENTICATION');
 
                 if (totalHeaderMatches && totalHeaderMatches.length > 0) {
                     let html = ``;
@@ -1173,7 +1209,7 @@
                 $('#template-body-variables').empty();
 
                 if (totalHeaderMatches && totalHeaderMatches.length > 0 || totalBodyMatches && totalBodyMatches.length >
-                    0) {
+                    0 || buttonVariables.length > 0) {
                     $('.variable-code-wrapper').removeClass('d-none');
                 } else {
                     $('.variable-code-wrapper').addClass('d-none');
@@ -1193,6 +1229,25 @@
                 } else {
                     $('#template-body-variables').html('');
                     $('.body-variable-area').addClass('d-none');
+                }
+
+                if (buttonVariables.length > 0) {
+                    let html = ``;
+                    $.each(buttonVariables, function(key, item) {
+                        const type = (item.button?.type ?? '').toUpperCase();
+                        const label = item.button?.text ?? `Button ${item.index + 1}`;
+                        const hint = type === 'COPY_CODE' ? "@lang('coupon code')" : "@lang('url suffix')";
+                        html += `
+                        <div class="form-group">
+                            <label class="label-two">${label} (${hint})</label>
+                            <input type="text" name="button_variables[${item.index}]" class="form--control form-two dynamic-filed"  placeholder="Enter value for ${label}" required>
+                        </div>`;
+                    });
+                    $('#template-button-variables').html(html);
+                    $('.button-variable-area').removeClass('d-none');
+                } else {
+                    $('#template-button-variables').html('');
+                    $('.button-variable-area').addClass('d-none');
                 }
             }
 
@@ -1223,9 +1278,9 @@
 
                 $('.body_text').text(templateBody);
                 if (footer) {
-                    $('.footer_text').text(footer);
+                    $('.footer_text').text(footer).removeClass('d-none');
                 } else {
-                    $('.footer_text').remove();
+                    $('.footer_text').text('').addClass('d-none');
                 }
                 const $headerMedia = $('.header_media').empty();
                 const $headerText = $('.header_text');

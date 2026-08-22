@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Gateway\PaymentController;
 use App\Http\Controllers\Gateway\Paytm\PayTM;
 use App\Models\Deposit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProcessController extends Controller
 {
@@ -47,21 +49,36 @@ class ProcessController extends Controller
 
         return json_encode($send);
     }
-    public function ipn()
+    public function ipn(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'ORDERID'      => 'required|string',
+            'CHECKSUMHASH' => 'required|string',
+            'RESPCODE'     => 'required|string',
+            'TXNAMOUNT'    => 'required|numeric',
+        ]);
 
-        $deposit = Deposit::where('trx', $_POST['ORDERID'])->orderBy('id', 'DESC')->first();
+        if ($validator->fails()) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Data invalid']]);
+        }
+
+        $deposit = Deposit::where('trx', $request->ORDERID)->orderBy('id', 'DESC')->first();
+
+        if (!$deposit) {
+            return to_route('user.deposit.index')->withNotify([['error', 'Data invalid']]);
+        }
+
         $PayTmAcc = json_decode($deposit->gatewayCurrency()->gateway_parameter);
         $ptm = new PayTM();
 
-        if ($ptm->verifychecksum_e($_POST, $PayTmAcc->merchant_key, $_POST['CHECKSUMHASH']) === "TRUE") {
+        if ($ptm->verifychecksum_e($request->all(), $PayTmAcc->merchant_key, $request->CHECKSUMHASH) === "TRUE") {
 
-            if ($_POST['RESPCODE'] == "01") {
-                $requestParamList = array("MID" => $PayTmAcc->MID, "ORDERID" => $_POST['ORDERID']);
+            if ($request->RESPCODE == "01") {
+                $requestParamList = array("MID" => $PayTmAcc->MID, "ORDERID" => $request->ORDERID);
                 $StatusCheckSum = $ptm->getChecksumFromArray($requestParamList, $PayTmAcc->merchant_key);
                 $requestParamList['CHECKSUMHASH'] = $StatusCheckSum;
                 $responseParamList = $ptm->callNewAPI($PayTmAcc->transaction_status_url, $requestParamList);
-                if ($responseParamList['STATUS'] == 'TXN_SUCCESS' && $responseParamList['TXNAMOUNT'] == $_POST['TXNAMOUNT'] && $deposit->status == Status::PAYMENT_INITIATE) {
+                if ($responseParamList['STATUS'] == 'TXN_SUCCESS' && $responseParamList['TXNAMOUNT'] == $request->TXNAMOUNT && $deposit->status == Status::PAYMENT_INITIATE) {
                     PaymentController::userDataUpdate($deposit);
                     $notify[] = ['success', 'Transaction is successful'];
                     return redirect($deposit->success_url)->withNotify($notify);
@@ -69,7 +86,7 @@ class ProcessController extends Controller
                     $notify[] = ['error', 'It seems some issue in server to server communication. Kindly connect with administrator'];
                 }
             } else {
-                $notify[] = ['error',  $_POST['RESPMSG']];
+                $notify[] = ['error',  $request->RESPMSG];
             }
         } else {
             $notify[] = ['error',  'Security error!'];

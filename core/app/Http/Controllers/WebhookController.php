@@ -286,7 +286,7 @@ class WebhookController extends Controller
                     try {
                         $mediaUrl = $whatsappLib->getMediaUrl($mediaId, $accessToken);
 
-                        if ($mediaUrl && $mediaType == 'image') {
+                        if ($mediaUrl && in_array($mediaType, ['image', 'audio', 'video'])) {
                             $mediaPath = $whatsappLib->storedMediaToLocal($mediaUrl['url'], $mediaId, $accessToken, $user->id);
                             $message->media_url = $mediaUrl;
                             $message->media_path = $mediaPath;
@@ -316,7 +316,7 @@ class WebhookController extends Controller
                     'message_receiver' => $user->fullname,
                     'message_sender' => $contact->firstname ?? $contact->mobile_code . $contact->mobile,
                     'message_content' => strLimit(($messageText ?? $buttonReply ?? ''), 50),
-                ]);
+                ], null, true, null, route('user.inbox.list'));
             }
 
             $messagesInConversation = Message::where('conversation_id', $conversation->id)->where('type', Status::MESSAGE_RECEIVED)->count();

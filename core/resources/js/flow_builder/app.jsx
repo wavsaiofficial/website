@@ -23,7 +23,7 @@ import Sidebar from "./nodes/Sidebar";
 import TriggerNode from "./nodes/TriggerNode";
 import SendCtaUrl from "./nodes/SendCtaUrl";
 import SendButtonNode from "./nodes/SendButtonNode";
-import axios from "axios";
+import axios, { BASE_URL } from "./http";
 import SendTemplateNode from "./nodes/SendTemplateNode";
 
 const INNER_HEIGHT = window.innerHeight / 2 - 340;
@@ -159,10 +159,6 @@ function FlowBuilder() {
             setEdges((eds) => addEdge({ ...params, animated: true }, eds)),
         [setEdges]
     );
-
-    const BASE_URL = document
-        .querySelector("meta[name=APP-DOMAIN]")
-        .getAttribute("content");
 
     const handleSaveFlow = () => {
         setShowModal(true);

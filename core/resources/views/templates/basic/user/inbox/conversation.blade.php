@@ -90,6 +90,16 @@
     <img src="" alt="">
 </div>
 
+<div class="video-preview-modal">
+    <a class="video-preview-modal__download" href="" download>
+        <i class="las la-download"></i>
+    </a>
+    <span class="video-preview-modal__close">&times;</span>
+    <div class="video-preview-modal__content">
+        <video controls preload="metadata"></video>
+    </div>
+</div>
+
 @push('script')
     <script>
         "use strict";
@@ -485,6 +495,26 @@
                 }
             });
 
+            $(document).on('click', '.message-video-thumb', function() {
+                const videoUrl = $(this).data('video-url');
+                const downloadUrl = $(this).data('download-url');
+                const $modal = $('.video-preview-modal');
+                $modal.find('video').attr('src', videoUrl);
+                $modal.find('.video-preview-modal__download').attr('href', downloadUrl);
+                $modal.addClass('show');
+            });
+
+            $(document).on('click', '.video-preview-modal__close, .video-preview-modal', function(e) {
+                if (e.target === this || $(e.target).hasClass('video-preview-modal__close')) {
+                    const $modal = $('.video-preview-modal');
+                    const video = $modal.find('video')[0];
+                    if (video) video.pause();
+                    $modal.find('video').attr('src', '');
+                    $modal.find('.video-preview-modal__download').attr('href', '');
+                    $modal.removeClass('show');
+                }
+            });
+
         })(jQuery);
     </script>
 @endpush
@@ -594,6 +624,100 @@
         .image-preview-modal__download:hover {
             opacity: 1;
             color: #fff;
+        }
+
+        .audio-message-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 260px;
+        }
+        .message-audio-player {
+            width: 100%;
+            height: 36px;
+            border-radius: 6px;
+        }
+        .audio-download-btn {
+            font-size: 18px;
+            color: hsl(var(--base));
+            flex-shrink: 0;
+        }
+        .video-message-wrapper {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            max-width: 200px;
+        }
+        .message-video-thumb {
+            max-width: 200px;
+            border-radius: 6px;
+            display: block;
+        }
+        .video-play-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 48px;
+            height: 48px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 20px;
+            pointer-events: none;
+        }
+        .video-preview-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 99999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .video-preview-modal.show {
+            display: flex;
+        }
+        .video-preview-modal__close {
+            position: absolute;
+            top: 15px;
+            right: 25px;
+            color: #fff !important;
+            font-size: 2.5rem;
+            cursor: pointer;
+            line-height: 1;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            z-index: 1;
+        }
+        .video-preview-modal__close:hover {
+            opacity: 1;
+        }
+        .video-preview-modal__download {
+            position: absolute;
+            top: 20px;
+            right: 60px;
+            color: #fff;
+            font-size: 1.6rem;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            z-index: 1;
+            text-decoration: none;
+        }
+        .video-preview-modal__download:hover {
+            opacity: 1;
+            color: #fff;
+        }
+        .video-preview-modal__content video {
+            max-width: 90vw;
+            max-height: 85vh;
+            border-radius: 4px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
         }
     </style>
 @endpush
